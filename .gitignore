@@ -1,0 +1,24 @@
+# .NET build output
+bin/
+obj/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Rider
+.idea/
+
+# Logs
+*.log
+
+buildcheck/
+
+# Flutter
+TOSAi.Mobile/.dart_tool/
+TOSAi.Mobile/build/
+TOSAi.Mobile/.flutter-plugins
+TOSAi.Mobile/.flutter-plugins-dependencies
+TOSAi.Mobile/.packages
+.tools/

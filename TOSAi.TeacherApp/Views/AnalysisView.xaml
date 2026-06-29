@@ -1,0 +1,69 @@
+﻿<UserControl x:Class="TOSAi.TeacherApp.Views.AnalysisView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DesignHeight="620"
+             d:DesignWidth="880">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="340" />
+            <ColumnDefinition Width="18" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <Border Grid.Column="0" Style="{StaticResource Card}">
+            <StackPanel>
+                <TextBlock Text="分析范围" Style="{StaticResource SectionTitle}" />
+                <ComboBox x:Name="ScopeComboBox" SelectedIndex="0" MinHeight="34">
+                    <ComboBoxItem Content="全年级" />
+                    <ComboBoxItem Content="单个班级" />
+                    <ComboBoxItem Content="单个学生" />
+                    <ComboBoxItem Content="单个学科" />
+                </ComboBox>
+
+                <TextBlock Text="输入要求" Margin="0,20,0,8" FontWeight="SemiBold" />
+                <TextBox x:Name="PromptTextBox"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto"
+                         MinHeight="210"
+                         Text="请分析本次年级考试的优势学科、薄弱学科、风险学生类型，并给出教师可执行的分层教学建议。" />
+
+                <Button x:Name="GenerateButton"
+                        Content="生成分析报告"
+                        Margin="0,18,0,0"
+                        Style="{StaticResource PrimaryButton}"
+                        Click="GenerateButton_Click" />
+                <TextBlock x:Name="ServiceStatusText"
+                           Margin="0,14,0,0"
+                           Foreground="{StaticResource TextMutedBrush}"
+                           TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Column="2" Style="{StaticResource Card}">
+            <StackPanel>
+                <TextBlock Text="AI 输出预览" Style="{StaticResource SectionTitle}" />
+                <TextBlock Text="分析页会自动读取本地保存的成绩明细，并把它们作为上下文发送给已配置的 AI 接口。"
+                           Style="{StaticResource MutedText}"
+                           Margin="0,0,0,16" />
+                <TextBlock Text="摘要" FontWeight="SemiBold" />
+                <TextBox x:Name="SummaryTextBox"
+                         Margin="0,8,0,16"
+                         MinHeight="90"
+                         IsReadOnly="True"
+                         TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto" />
+                <TextBlock Text="教学建议" FontWeight="SemiBold" />
+                <TextBox x:Name="SuggestionsTextBox"
+                         Margin="0,8,0,0"
+                         MinHeight="260"
+                         IsReadOnly="True"
+                         TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>
