@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Controls;
 using TOSAi.TeacherApp.Models;
 using TOSAi.TeacherApp.Services;
@@ -9,7 +9,7 @@ namespace TOSAi.TeacherApp;
 public partial class MainWindow : Window
 {
     private readonly IPlatformApiClient _apiClient = new FallbackPlatformApiClient(
-        new HttpPlatformApiClient("http://localhost:5088"),
+        new HttpPlatformApiClient("https://tosai.onrender.com"),
         new MockPlatformApiClient());
     private readonly Dictionary<string, PageRegistration> _pages = new();
     private readonly Dictionary<UserRole, IReadOnlyList<NavigationRegistration>> _navigation = new();

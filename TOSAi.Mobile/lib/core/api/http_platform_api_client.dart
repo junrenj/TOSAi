@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:io';
 
 import '../models/platform_feature_page.dart';
@@ -9,7 +9,7 @@ class HttpPlatformApiClient implements PlatformApiClient {
   HttpPlatformApiClient({
     this.baseUrl = const String.fromEnvironment(
       'TOSAI_API_BASE_URL',
-      defaultValue: 'http://10.0.2.2:5088',
+      defaultValue: 'https://tosai.onrender.com',
     ),
   });
 
