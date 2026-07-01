@@ -97,9 +97,10 @@ public partial class ScoreEntryView : UserControl
 
         try
         {
+            int importedCount = _importRows.Count;
             await _scoreStore.SaveAsync(_importRows);
-            RefreshSummaryRows();
-            ImportStatusText.Text = $"已保存 {_importRows.Count} 条成绩明细到云端：{_scoreStore.Description}";
+            await LoadCloudRowsAsync(showEmptyMessage: false);
+            ImportStatusText.Text = $"已合并保存 {importedCount} 条成绩明细到云端；当前云端共 {_importRows.Count} 条。";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or HttpRequestException or TaskCanceledException)
         {

@@ -347,7 +347,7 @@ sealed class ScoreImportRowStore : IScoreImportRowStore
         {
             lock (MemoryLock)
             {
-                memoryRows = rows.ToList();
+                memoryRows = MergeRows(memoryRows, rows).ToList();
             }
             return;
         }
@@ -357,13 +357,20 @@ sealed class ScoreImportRowStore : IScoreImportRowStore
         await using NpgsqlConnection connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync(cancellationToken);
 
-        await using (NpgsqlCommand deleteCommand = new("delete from score_import_rows;", connection, transaction))
-        {
-            await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
-        }
-
         foreach (ScoreImportRowDto row in rows)
         {
+            await using (NpgsqlCommand deleteCommand = new("""
+                delete from score_import_rows
+                where exam_name = $1 and exam_date = $2 and student_id = $3 and subject_name = $4;
+                """, connection, transaction))
+            {
+                deleteCommand.Parameters.Add(new() { Value = row.ExamName.Trim() });
+                deleteCommand.Parameters.Add(new() { Value = row.ExamDate.ToDateTime(TimeOnly.MinValue) });
+                deleteCommand.Parameters.Add(new() { Value = row.StudentId.Trim() });
+                deleteCommand.Parameters.Add(new() { Value = row.SubjectName.Trim() });
+                await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+
             await using NpgsqlCommand insertCommand = new("""
                 insert into score_import_rows (exam_name, exam_date, grade_name, class_name, student_id, student_name, subject_name, score, full_score)
                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9);
@@ -388,6 +395,29 @@ sealed class ScoreImportRowStore : IScoreImportRowStore
         await transaction.CommitAsync(cancellationToken);
     }
 
+    private static IReadOnlyList<ScoreImportRowDto> MergeRows(IEnumerable<ScoreImportRowDto> existingRows, IEnumerable<ScoreImportRowDto> incomingRows)
+    {
+        Dictionary<string, ScoreImportRowDto> merged = existingRows.ToDictionary(BuildKey, StringComparer.OrdinalIgnoreCase);
+        foreach (ScoreImportRowDto row in incomingRows)
+        {
+            merged[BuildKey(row)] = row;
+        }
+
+        return merged.Values
+            .OrderBy(row => row.ExamDate)
+            .ThenBy(row => row.ExamName)
+            .ThenBy(row => row.ClassName)
+            .ThenBy(row => row.StudentName)
+            .ThenBy(row => row.SubjectName)
+            .ToList();
+    }
+
+    private static string BuildKey(ScoreImportRowDto row) => string.Join("|",
+        row.ExamName.Trim(),
+        row.ExamDate.ToString("yyyy-MM-dd"),
+        row.StudentId.Trim(),
+        row.SubjectName.Trim());
+
     private static async Task EnsureSchemaAsync(NpgsqlDataSource dataSource, CancellationToken cancellationToken)
     {
         await using NpgsqlCommand command = dataSource.CreateCommand("""
@@ -407,9 +437,7 @@ sealed class ScoreImportRowStore : IScoreImportRowStore
             """);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
-
 }
-
 interface IQuestionBankRowStore
 {
     Task<IReadOnlyList<QuestionBankRowDto>> LoadAsync(CancellationToken cancellationToken);
@@ -470,7 +498,7 @@ sealed class QuestionBankRowStore : IQuestionBankRowStore
         {
             lock (MemoryLock)
             {
-                memoryRows = rows.ToList();
+                memoryRows = MergeRows(memoryRows, rows).ToList();
             }
             return;
         }
@@ -480,13 +508,22 @@ sealed class QuestionBankRowStore : IQuestionBankRowStore
         await using NpgsqlConnection connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync(cancellationToken);
 
-        await using (NpgsqlCommand deleteCommand = new("delete from question_bank_rows;", connection, transaction))
-        {
-            await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
-        }
-
         foreach (QuestionBankRowDto row in rows)
         {
+            await using (NpgsqlCommand deleteCommand = new("""
+                delete from question_bank_rows
+                where type = $1 and topic = $2 and direction = $3 and scenario = $4 and difficulty = $5 and stem = $6;
+                """, connection, transaction))
+            {
+                deleteCommand.Parameters.Add(new() { Value = row.Type.Trim() });
+                deleteCommand.Parameters.Add(new() { Value = row.Topic.Trim() });
+                deleteCommand.Parameters.Add(new() { Value = row.Direction.Trim() });
+                deleteCommand.Parameters.Add(new() { Value = row.Scenario.Trim() });
+                deleteCommand.Parameters.Add(new() { Value = row.Difficulty.Trim() });
+                deleteCommand.Parameters.Add(new() { Value = row.Stem.Trim() });
+                await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+
             await using NpgsqlCommand insertCommand = new("""
                 insert into question_bank_rows (type, topic, direction, scenario, difficulty, stem, option_a, option_b, option_c, option_d, answer, explanation)
                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12);
@@ -514,6 +551,30 @@ sealed class QuestionBankRowStore : IQuestionBankRowStore
         await transaction.CommitAsync(cancellationToken);
     }
 
+    private static IReadOnlyList<QuestionBankRowDto> MergeRows(IEnumerable<QuestionBankRowDto> existingRows, IEnumerable<QuestionBankRowDto> incomingRows)
+    {
+        Dictionary<string, QuestionBankRowDto> merged = existingRows.ToDictionary(BuildKey, StringComparer.OrdinalIgnoreCase);
+        foreach (QuestionBankRowDto row in incomingRows)
+        {
+            merged[BuildKey(row)] = row;
+        }
+
+        return merged.Values
+            .OrderBy(row => row.Topic)
+            .ThenBy(row => row.Difficulty)
+            .ThenBy(row => row.Type)
+            .ThenBy(row => row.Stem)
+            .ToList();
+    }
+
+    private static string BuildKey(QuestionBankRowDto row) => string.Join("|",
+        row.Type.Trim(),
+        row.Topic.Trim(),
+        row.Direction.Trim(),
+        row.Scenario.Trim(),
+        row.Difficulty.Trim(),
+        row.Stem.Trim());
+
     private static async Task EnsureSchemaAsync(NpgsqlDataSource dataSource, CancellationToken cancellationToken)
     {
         await using NpgsqlCommand command = dataSource.CreateCommand("""
@@ -537,7 +598,6 @@ sealed class QuestionBankRowStore : IQuestionBankRowStore
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 }
-
 static class DatabaseConnectionOptions
 {
     public static bool HasConfiguredDatabase => !string.IsNullOrWhiteSpace(Normalize(

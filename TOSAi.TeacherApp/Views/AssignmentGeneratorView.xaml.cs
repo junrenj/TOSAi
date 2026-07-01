@@ -354,8 +354,10 @@ public partial class AssignmentGeneratorView : UserControl
 
         try
         {
+            int importedCount = _questionBank.Count;
             await _questionBankStore.SaveAsync(_questionBank);
-            BankStatusText.Text = $"已保存 {_questionBank.Count} 道题到云端：{_questionBankStore.Description}";
+            await LoadCloudBankAsync(showEmptyMessage: false);
+            BankStatusText.Text = $"已合并保存 {importedCount} 道题到云端；当前云端题库共 {_questionBank.Count} 道。";
             StatusText.Text = "云端题库已更新，生成作业会优先使用这些题目。";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or HttpRequestException or TaskCanceledException)
