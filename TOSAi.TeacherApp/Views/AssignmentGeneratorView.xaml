@@ -143,11 +143,13 @@
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                             <Button Content="下载题库模板" Style="{StaticResource SecondaryButton}" Click="ExportBankTemplateButton_Click" />
                             <Button Content="导入题库 CSV" Margin="10,0,0,0" Style="{StaticResource PrimaryButton}" Click="ImportBankButton_Click" />
-                            <Button Content="清空题库" Margin="10,0,0,0" Style="{StaticResource SecondaryButton}" Click="ClearBankButton_Click" />
+                            <Button Content="保存云端" Margin="10,0,0,0" Style="{StaticResource SecondaryButton}" Click="SaveBankButton_Click" />
+                            <Button Content="读取云端" Margin="10,0,0,0" Style="{StaticResource SecondaryButton}" Click="LoadBankButton_Click" />
+                            <Button Content="清空云端" Margin="10,0,0,0" Style="{StaticResource SecondaryButton}" Click="ClearBankButton_Click" />
                         </StackPanel>
                         <StackPanel>
                             <TextBlock Text="题库管理" Style="{StaticResource SectionTitle}" />
-                            <TextBlock Text="导入后的题库会优先用于生成作业和更换题目。字段需要包含题型、主题、考察方向、情景分类、难度、题干、选项、答案和解析。" Style="{StaticResource MutedText}" TextWrapping="Wrap" />
+                            <TextBlock Text="题库可通过 CSV 导入并保存云端，后续生成作业和更换题目会优先使用云端题库。字段需要包含题型、主题、考察方向、情景分类、难度、题干、选项、答案和解析。" Style="{StaticResource MutedText}" TextWrapping="Wrap" />
                             <TextBlock x:Name="BankStatusText" Margin="0,8,0,0" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" />
                         </StackPanel>
                     </DockPanel>

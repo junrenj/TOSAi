@@ -7,6 +7,7 @@ builder.Services.AddCors(options =>
     options.AddDefaultPolicy(policy => policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
 });
 builder.Services.AddSingleton<IScoreImportRowStore, ScoreImportRowStore>();
+builder.Services.AddSingleton<IQuestionBankRowStore, QuestionBankRowStore>();
 
 var app = builder.Build();
 
@@ -16,14 +17,16 @@ app.MapGet("/", () => Results.Ok(new
 {
     name = "TOS AI Platform API",
     status = "running",
-    storage = ScoreImportRowStore.HasConfiguredDatabase ? "postgres" : "memory",
+    storage = DatabaseConnectionOptions.HasConfiguredDatabase ? "postgres" : "memory",
     endpoints = new[]
     {
         "POST /api/auth/login",
         "GET /api/me",
         "GET /api/platform/{role}/{pageKey}",
         "GET /api/scores/import-rows",
-        "POST /api/scores/import-rows"
+        "POST /api/scores/import-rows",
+        "GET /api/questions/import-rows",
+        "POST /api/questions/import-rows"
     }
 }));
 
@@ -52,7 +55,7 @@ app.MapGet("/api/platform/{role}/{pageKey}", (string role, string pageKey) =>
 app.MapGet("/api/scores/import-rows", async (IScoreImportRowStore store, CancellationToken cancellationToken) =>
 {
     IReadOnlyList<ScoreImportRowDto> rows = await store.LoadAsync(cancellationToken);
-    return Results.Ok(new ScoreImportRowsResponse(rows, rows.Count, ScoreImportRowStore.HasConfiguredDatabase ? "postgres" : "memory"));
+    return Results.Ok(new ScoreImportRowsResponse(rows, rows.Count, DatabaseConnectionOptions.HasConfiguredDatabase ? "postgres" : "memory"));
 });
 
 app.MapPost("/api/scores/import-rows", async (IReadOnlyList<ScoreImportRowDto> rows, IScoreImportRowStore store, CancellationToken cancellationToken) =>
@@ -67,7 +70,34 @@ app.MapPost("/api/scores/import-rows", async (IReadOnlyList<ScoreImportRowDto> r
     }
 
     await store.SaveAsync(rows, cancellationToken);
-    return Results.Ok(new ScoreImportRowsResponse(rows, rows.Count, ScoreImportRowStore.HasConfiguredDatabase ? "postgres" : "memory"));
+    return Results.Ok(new ScoreImportRowsResponse(rows, rows.Count, DatabaseConnectionOptions.HasConfiguredDatabase ? "postgres" : "memory"));
+});
+
+app.MapGet("/api/questions/import-rows", async (IQuestionBankRowStore store, CancellationToken cancellationToken) =>
+{
+    IReadOnlyList<QuestionBankRowDto> rows = await store.LoadAsync(cancellationToken);
+    return Results.Ok(new QuestionBankRowsResponse(rows, rows.Count, DatabaseConnectionOptions.HasConfiguredDatabase ? "postgres" : "memory"));
+});
+
+app.MapGet("/api/questions", async (IQuestionBankRowStore store, CancellationToken cancellationToken) =>
+{
+    IReadOnlyList<QuestionBankRowDto> rows = await store.LoadAsync(cancellationToken);
+    return Results.Ok(new QuestionBankRowsResponse(rows, rows.Count, DatabaseConnectionOptions.HasConfiguredDatabase ? "postgres" : "memory"));
+});
+
+app.MapPost("/api/questions/import-rows", async (IReadOnlyList<QuestionBankRowDto> rows, IQuestionBankRowStore store, CancellationToken cancellationToken) =>
+{
+    if (rows.Count > 0)
+    {
+        string? validationError = ValidateQuestionRows(rows);
+        if (validationError is not null)
+        {
+            return Results.BadRequest(new { message = validationError });
+        }
+    }
+
+    await store.SaveAsync(rows, cancellationToken);
+    return Results.Ok(new QuestionBankRowsResponse(rows, rows.Count, DatabaseConnectionOptions.HasConfiguredDatabase ? "postgres" : "memory"));
 });
 
 app.Run();
@@ -92,6 +122,40 @@ static string? ValidateScoreRows(IReadOnlyList<ScoreImportRowDto>? rows)
         if (row.Score < 0 || row.FullScore <= 0 || row.Score > row.FullScore)
         {
             return $"第 {rowNumber} 条成绩明细分数范围不正确。";
+        }
+    }
+
+    return null;
+}
+
+static string? ValidateQuestionRows(IReadOnlyList<QuestionBankRowDto>? rows)
+{
+    if (rows is null || rows.Count == 0)
+    {
+        return "请至少提交一道题目。";
+    }
+
+    string[] allowedTypes = ["选择题", "大题"];
+    for (int i = 0; i < rows.Count; i++)
+    {
+        QuestionBankRowDto row = rows[i];
+        int rowNumber = i + 1;
+        if (string.IsNullOrWhiteSpace(row.Type) || string.IsNullOrWhiteSpace(row.Topic) || string.IsNullOrWhiteSpace(row.Direction) ||
+            string.IsNullOrWhiteSpace(row.Scenario) || string.IsNullOrWhiteSpace(row.Difficulty) || string.IsNullOrWhiteSpace(row.Stem) ||
+            string.IsNullOrWhiteSpace(row.Answer))
+        {
+            return $"第 {rowNumber} 道题存在空字段。";
+        }
+
+        if (!allowedTypes.Contains(row.Type.Trim()))
+        {
+            return $"第 {rowNumber} 道题题型必须是“选择题”或“大题”。";
+        }
+
+        if (row.Type.Trim() == "选择题" && string.IsNullOrWhiteSpace(row.OptionA) && string.IsNullOrWhiteSpace(row.OptionB) &&
+            string.IsNullOrWhiteSpace(row.OptionC) && string.IsNullOrWhiteSpace(row.OptionD))
+        {
+            return $"第 {rowNumber} 道选择题至少需要一个选项。";
         }
     }
 
@@ -137,7 +201,7 @@ static PlatformFeaturePage CreatePage(string role, string pageKey)
                 [Activity("初二 1 班名单", "档案", "今天", "已同步 48 名学生档案。", "已更新"), Activity("初二 2 班名单", "档案", "今天", "已同步 47 名学生档案。", "已更新")],
                 "学生档案数据由服务器统一维护。"),
             "teacherScores" => Page(
-                [Card("云端成绩", "可用", "支持保存和读取"), Card("数据库", ScoreImportRowStore.HasConfiguredDatabase ? "Postgres" : "内存", "由 API 自动选择"), Card("导入入口", "WPF", "成绩录入页面"), Card("趋势读取", "WPF", "学生趋势页面")],
+                [Card("云端成绩", "可用", "支持保存和读取"), Card("数据库", DatabaseConnectionOptions.HasConfiguredDatabase ? "Postgres" : "内存", "由 API 自动选择"), Card("导入入口", "WPF", "成绩录入页面"), Card("趋势读取", "WPF", "学生趋势页面")],
                 [Activity("成绩接口", "接口", "今天", "GET/POST /api/scores/import-rows 已启用。", "已上线"), Activity("数据闭环", "数据", "今天", "成绩录入和学生趋势可共用云端数据。", "可测试")],
                 "成绩导入页面会把 CSV 明细保存到服务器；配置 DATABASE_URL 后会写入 PostgreSQL。"),
             "teacherTrends" => Page(
@@ -145,9 +209,9 @@ static PlatformFeaturePage CreatePage(string role, string pageKey)
                 [Activity("学生趋势汇总", "趋势", "今天", "趋势页面数据来自云端成绩明细。", "已更新"), Activity("薄弱学科提醒", "提醒", "今天", "英语阅读波动学生已标记。", "待查看")],
                 "学生趋势基于服务器中的成绩明细生成。"),
             "teacherAssignmentGenerator" => Page(
-                [Card("已生成", "12", "本周"), Card("可替换题目", "48", "题库命中"), Card("导出作业", "7", "已发布"), Card("平均难度", "中等", "按班级适配")],
+                [Card("已生成", "12", "本周"), Card("云端题库", "可用", "支持导入和读取"), Card("导出作业", "7", "已发布"), Card("平均难度", "中等", "按班级适配")],
                 [Activity("生物专题作业", "作业", "今天", "作业草稿已在云端生成。", "待确认"), Activity("题库匹配", "题库", "今天", "已优先匹配高相关题目。", "已完成")],
-                "作业生成结果由服务器返回，前端只负责展示和编辑。"),
+                "作业生成页面可读取云端题库，按主题、方向、情景和难度筛选题目。"),
             "teacherAssignments" => Page(
                 [Card("待布置任务", "18", "服务器返回的作业草稿"), Card("未完成学生", "34", "需教师跟进"), Card("批改队列", "52", "扫描录入与线上提交"), Card("本周完成率", "86%", "按班级汇总")],
                 [Activity("初二 1 班数学分层练习", "作业", "今天", "针对函数综合题分层下发。", "待确认"), Activity("物理实验题专项", "练习", "本周", "面向连续两次实验题失分学生。", "草稿")],
@@ -237,11 +301,8 @@ sealed class ScoreImportRowStore : IScoreImportRowStore
 {
     private static readonly object MemoryLock = new();
     private static List<ScoreImportRowDto> memoryRows = [];
-    private readonly string? connectionString = NormalizeConnectionString(
+    private readonly string? connectionString = DatabaseConnectionOptions.Normalize(
         Environment.GetEnvironmentVariable("DATABASE_URL") ?? Environment.GetEnvironmentVariable("POSTGRES_CONNECTION_STRING"));
-
-    public static bool HasConfiguredDatabase => !string.IsNullOrWhiteSpace(NormalizeConnectionString(
-        Environment.GetEnvironmentVariable("DATABASE_URL") ?? Environment.GetEnvironmentVariable("POSTGRES_CONNECTION_STRING")));
 
     public async Task<IReadOnlyList<ScoreImportRowDto>> LoadAsync(CancellationToken cancellationToken)
     {
@@ -347,7 +408,142 @@ sealed class ScoreImportRowStore : IScoreImportRowStore
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static string? NormalizeConnectionString(string? connectionString)
+}
+
+interface IQuestionBankRowStore
+{
+    Task<IReadOnlyList<QuestionBankRowDto>> LoadAsync(CancellationToken cancellationToken);
+
+    Task SaveAsync(IReadOnlyList<QuestionBankRowDto> rows, CancellationToken cancellationToken);
+}
+
+sealed class QuestionBankRowStore : IQuestionBankRowStore
+{
+    private static readonly object MemoryLock = new();
+    private static List<QuestionBankRowDto> memoryRows = [];
+    private readonly string? connectionString = DatabaseConnectionOptions.Normalize(
+        Environment.GetEnvironmentVariable("DATABASE_URL") ?? Environment.GetEnvironmentVariable("POSTGRES_CONNECTION_STRING"));
+
+    public async Task<IReadOnlyList<QuestionBankRowDto>> LoadAsync(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            lock (MemoryLock)
+            {
+                return memoryRows.ToList();
+            }
+        }
+
+        await using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(connectionString);
+        await EnsureSchemaAsync(dataSource, cancellationToken);
+        await using NpgsqlCommand command = dataSource.CreateCommand("""
+            select type, topic, direction, scenario, difficulty, stem, option_a, option_b, option_c, option_d, answer, explanation
+            from question_bank_rows
+            order by topic, difficulty, type, id;
+            """);
+
+        List<QuestionBankRowDto> rows = [];
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new QuestionBankRowDto(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.GetString(4),
+                reader.GetString(5),
+                reader.GetString(6),
+                reader.GetString(7),
+                reader.GetString(8),
+                reader.GetString(9),
+                reader.GetString(10),
+                reader.GetString(11)));
+        }
+
+        return rows;
+    }
+
+    public async Task SaveAsync(IReadOnlyList<QuestionBankRowDto> rows, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            lock (MemoryLock)
+            {
+                memoryRows = rows.ToList();
+            }
+            return;
+        }
+
+        await using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(connectionString);
+        await EnsureSchemaAsync(dataSource, cancellationToken);
+        await using NpgsqlConnection connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await using (NpgsqlCommand deleteCommand = new("delete from question_bank_rows;", connection, transaction))
+        {
+            await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        foreach (QuestionBankRowDto row in rows)
+        {
+            await using NpgsqlCommand insertCommand = new("""
+                insert into question_bank_rows (type, topic, direction, scenario, difficulty, stem, option_a, option_b, option_c, option_d, answer, explanation)
+                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12);
+                """, connection, transaction)
+            {
+                Parameters =
+                {
+                    new() { Value = row.Type.Trim() },
+                    new() { Value = row.Topic.Trim() },
+                    new() { Value = row.Direction.Trim() },
+                    new() { Value = row.Scenario.Trim() },
+                    new() { Value = row.Difficulty.Trim() },
+                    new() { Value = row.Stem.Trim() },
+                    new() { Value = row.OptionA.Trim() },
+                    new() { Value = row.OptionB.Trim() },
+                    new() { Value = row.OptionC.Trim() },
+                    new() { Value = row.OptionD.Trim() },
+                    new() { Value = row.Answer.Trim() },
+                    new() { Value = row.Explanation.Trim() }
+                }
+            };
+            await insertCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    private static async Task EnsureSchemaAsync(NpgsqlDataSource dataSource, CancellationToken cancellationToken)
+    {
+        await using NpgsqlCommand command = dataSource.CreateCommand("""
+            create table if not exists question_bank_rows (
+                id bigserial primary key,
+                type text not null,
+                topic text not null,
+                direction text not null,
+                scenario text not null,
+                difficulty text not null,
+                stem text not null,
+                option_a text not null default '',
+                option_b text not null default '',
+                option_c text not null default '',
+                option_d text not null default '',
+                answer text not null,
+                explanation text not null default '',
+                created_at timestamptz not null default now()
+            );
+            """);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+}
+
+static class DatabaseConnectionOptions
+{
+    public static bool HasConfiguredDatabase => !string.IsNullOrWhiteSpace(Normalize(
+        Environment.GetEnvironmentVariable("DATABASE_URL") ?? Environment.GetEnvironmentVariable("POSTGRES_CONNECTION_STRING")));
+
+    public static string? Normalize(string? connectionString)
     {
         if (string.IsNullOrWhiteSpace(connectionString))
         {
@@ -389,14 +585,12 @@ sealed class ScoreImportRowStore : IScoreImportRowStore
                 {
                     builder.SslMode = sslMode;
                 }
-
             }
         }
 
         return builder.ConnectionString;
     }
 }
-
 sealed record LoginRequest(string Role, string Username, string Password);
 
 sealed record LoginResponse(string Token, CurrentUser User);
@@ -410,6 +604,7 @@ sealed record PlatformMetricCard(string Label, string Value, string Hint);
 sealed record PlatformActivityItem(string Title, string Category, string TimeText, string Detail, string Status);
 
 sealed record ScoreImportRowsResponse(IReadOnlyList<ScoreImportRowDto> Rows, int Count, string Storage);
+sealed record QuestionBankRowsResponse(IReadOnlyList<QuestionBankRowDto> Rows, int Count, string Storage);
 
 sealed record ScoreImportRowDto(
     string ExamName,
@@ -424,3 +619,17 @@ sealed record ScoreImportRowDto(
 {
     public double ScoreRate => FullScore <= 0 ? 0 : Math.Round(Score / FullScore * 100, 1);
 }
+
+sealed record QuestionBankRowDto(
+    string Type,
+    string Topic,
+    string Direction,
+    string Scenario,
+    string Difficulty,
+    string Stem,
+    string OptionA,
+    string OptionB,
+    string OptionC,
+    string OptionD,
+    string Answer,
+    string Explanation);

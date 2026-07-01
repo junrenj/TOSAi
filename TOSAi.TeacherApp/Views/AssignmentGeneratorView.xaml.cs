@@ -2,11 +2,13 @@
 using System.ComponentModel;
 using System.Globalization;
 using System.IO;
+using System.Net.Http;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.VisualBasic.FileIO;
 using Microsoft.Win32;
+using TOSAi.TeacherApp.Services;
 
 namespace TOSAi.TeacherApp.Views;
 
@@ -20,6 +22,7 @@ public partial class AssignmentGeneratorView : UserControl
     private static readonly string[] BankHeader = ["题型", "主题", "考察方向", "情景分类", "难度", "题干", "选项A", "选项B", "选项C", "选项D", "答案", "解析"];
 
     private readonly ObservableCollection<GeneratedQuestion> _questions = [];
+    private readonly IQuestionBankStore _questionBankStore = new HttpQuestionBankStore("https://tosai.onrender.com");
     private readonly ObservableCollection<QuestionBankItem> _questionBank = [];
     private readonly ObservableCollection<QuestionBankItem> _filteredQuestionBank = [];
     private int _replaceIndex = -1;
@@ -34,6 +37,14 @@ public partial class AssignmentGeneratorView : UserControl
         BankDataGrid.ItemsSource = _filteredQuestionBank;
         RefreshBankFilters();
         RefreshBankView();
+        Loaded += AssignmentGeneratorView_Loaded;
+    }
+
+
+    private async void AssignmentGeneratorView_Loaded(object sender, RoutedEventArgs e)
+    {
+        Loaded -= AssignmentGeneratorView_Loaded;
+        await LoadCloudBankAsync(showEmptyMessage: false);
     }
 
     private void InitializeSelectors()
@@ -324,8 +335,8 @@ public partial class AssignmentGeneratorView : UserControl
 
             RefreshBankFilters();
             RefreshBankView();
-            BankStatusText.Text = $"已导入 {_questionBank.Count} 道题：{Path.GetFileName(dialog.FileName)}";
-            StatusText.Text = "已导入题库，后续生成作业和更换题目会优先使用题库。";
+            BankStatusText.Text = $"已导入 {_questionBank.Count} 道题：{Path.GetFileName(dialog.FileName)}。请点击“保存云端”同步到服务器。";
+            StatusText.Text = "已导入题库，保存云端后生成作业和更换题目会优先使用云端题库。";
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
         {
@@ -333,12 +344,81 @@ public partial class AssignmentGeneratorView : UserControl
         }
     }
 
-    private void ClearBankButton_Click(object sender, RoutedEventArgs e)
+    private async void SaveBankButton_Click(object sender, RoutedEventArgs e)
     {
-        _questionBank.Clear();
-        RefreshBankFilters();
-        RefreshBankView();
-        BankStatusText.Text = "题库已清空。";
+        if (_questionBank.Count == 0)
+        {
+            MessageBox.Show("还没有导入题库。", "保存题库", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        try
+        {
+            await _questionBankStore.SaveAsync(_questionBank);
+            BankStatusText.Text = $"已保存 {_questionBank.Count} 道题到云端：{_questionBankStore.Description}";
+            StatusText.Text = "云端题库已更新，生成作业会优先使用这些题目。";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or HttpRequestException or TaskCanceledException)
+        {
+            MessageBox.Show(ex.Message, "保存云端题库失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private async void LoadBankButton_Click(object sender, RoutedEventArgs e)
+    {
+        await LoadCloudBankAsync(showEmptyMessage: true);
+    }
+
+    private async void ClearBankButton_Click(object sender, RoutedEventArgs e)
+    {
+        MessageBoxResult result = MessageBox.Show("确定要清空云端保存的题库吗？", "清空云端题库", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        if (result != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        try
+        {
+            await _questionBankStore.ClearAsync();
+            _questionBank.Clear();
+            RefreshBankFilters();
+            RefreshBankView();
+            BankStatusText.Text = "云端题库已清空。";
+            StatusText.Text = "云端题库已清空，生成作业会回退到内置模板。";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or HttpRequestException or TaskCanceledException)
+        {
+            MessageBox.Show(ex.Message, "清空云端题库失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private async Task LoadCloudBankAsync(bool showEmptyMessage)
+    {
+        try
+        {
+            ObservableCollection<QuestionBankItem> rows = await _questionBankStore.LoadAsync();
+            _questionBank.Clear();
+            foreach (QuestionBankItem row in rows)
+            {
+                _questionBank.Add(row);
+            }
+
+            RefreshBankFilters();
+            RefreshBankView();
+            if (_questionBank.Count > 0)
+            {
+                BankStatusText.Text = $"已读取云端题库 {_questionBank.Count} 道题。";
+                StatusText.Text = "已加载云端题库，生成作业会优先使用这些题目。";
+            }
+            else if (showEmptyMessage)
+            {
+                BankStatusText.Text = "云端还没有保存题库。";
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or HttpRequestException or TaskCanceledException)
+        {
+            MessageBox.Show(ex.Message, "读取云端题库失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     private void BankFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
