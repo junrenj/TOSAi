@@ -128,12 +128,46 @@ public static class CsvScoreTemplateService
 
     private static DateOnly ParseDate(string value, int rowNumber)
     {
-        if (DateOnly.TryParseExact(value.Trim(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly date))
+        string trimmed = value.Trim().Trim('\uFEFF');
+        string[] acceptedFormats =
+        [
+            "yyyy-MM-dd",
+            "yyyy/M/d",
+            "yyyy/MM/dd",
+            "yyyy.M.d",
+            "yyyy.MM.dd",
+            "yyyy年M月d日",
+            "yyyy年MM月dd日",
+            "M/d/yyyy",
+            "MM/dd/yyyy",
+            "M-d-yyyy",
+            "MM-dd-yyyy"
+        ];
+
+        if (DateOnly.TryParseExact(trimmed, acceptedFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly exactDate))
         {
-            return date;
+            return exactDate;
         }
 
-        throw new InvalidDataException($"第 {rowNumber} 行“考试日期”格式不正确，请使用 yyyy-MM-dd。");
+        if (DateTime.TryParse(trimmed, CultureInfo.GetCultureInfo("zh-CN"), DateTimeStyles.None, out DateTime parsedDate) ||
+            DateTime.TryParse(trimmed, CultureInfo.InvariantCulture, DateTimeStyles.None, out parsedDate))
+        {
+            return DateOnly.FromDateTime(parsedDate);
+        }
+
+        if (double.TryParse(trimmed, NumberStyles.Number, CultureInfo.InvariantCulture, out double oaDate) && oaDate > 1)
+        {
+            try
+            {
+                return DateOnly.FromDateTime(DateTime.FromOADate(oaDate));
+            }
+            catch (ArgumentException)
+            {
+                // Fall through to the user-facing validation error below.
+            }
+        }
+
+        throw new InvalidDataException($"第 {rowNumber} 行“考试日期”格式不正确，当前值为“{value}”。请使用 2026-04-20 或 2026/4/20 这种日期格式。");
     }
 
     private static double ParseNumber(string value, int rowNumber, string columnName)
