@@ -12,13 +12,13 @@
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <Button Content="导入 CSV" Style="{StaticResource PrimaryButton}" Click="ImportScoresButton_Click" />
                     <Button Content="导出模板" Margin="10,0,0,0" Style="{StaticResource SecondaryButton}" Click="ExportTemplateButton_Click" />
-                    <Button Content="保存本地" Margin="10,0,0,0" Style="{StaticResource SecondaryButton}" Click="SaveButton_Click" />
-                    <Button Content="读取本地" Margin="10,0,0,0" Style="{StaticResource SecondaryButton}" Click="LoadLocalButton_Click" />
-                    <Button Content="清空本地" Margin="10,0,0,0" Style="{StaticResource SecondaryButton}" Click="ClearLocalButton_Click" />
+                    <Button Content="保存云端" Margin="10,0,0,0" Style="{StaticResource SecondaryButton}" Click="SaveButton_Click" />
+                    <Button Content="读取云端" Margin="10,0,0,0" Style="{StaticResource SecondaryButton}" Click="LoadLocalButton_Click" />
+                    <Button Content="清空云端" Margin="10,0,0,0" Style="{StaticResource SecondaryButton}" Click="ClearLocalButton_Click" />
                 </StackPanel>
                 <StackPanel>
                     <TextBlock Text="成绩录入与校验" Style="{StaticResource SectionTitle}" />
-                    <TextBlock Text="使用 CSV 模板录入成绩，可直接用 Excel 打开编辑。当前支持导出模板、导入校验和明细预览。"
+                    <TextBlock Text="使用 CSV 模板录入成绩，可直接用 Excel 打开编辑。当前支持导出模板、导入校验、明细预览和保存云端。"
                                Style="{StaticResource MutedText}" />
                     <TextBlock x:Name="ImportStatusText"
                                Margin="0,8,0,0"

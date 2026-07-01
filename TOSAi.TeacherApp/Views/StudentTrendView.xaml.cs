@@ -1,4 +1,5 @@
 ﻿using System.Collections.ObjectModel;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
 using TOSAi.TeacherApp.Models;
@@ -10,7 +11,7 @@ public partial class StudentTrendView : UserControl
 {
     private const string AllSubjects = "全部学科";
 
-    private readonly LocalScoreStore _scoreStore = new();
+    private readonly IScoreStore _scoreStore = new HttpScoreStore("https://tosai.onrender.com");
     private ObservableCollection<ScoreImportRow> _allRows = [];
     private bool _isUpdatingFilters;
 
@@ -53,13 +54,24 @@ public partial class StudentTrendView : UserControl
 
     private async Task LoadRowsAsync()
     {
-        _allRows = await _scoreStore.LoadAsync();
-        PopulateStudents();
-        RefreshTrend();
+        try
+        {
+            _allRows = await _scoreStore.LoadAsync();
+            PopulateStudents();
+            RefreshTrend();
 
-        StatusText.Text = _allRows.Count == 0
-            ? "暂无本地成绩数据"
-            : $"已读取 {_allRows.Count} 条本地成绩明细";
+            StatusText.Text = _allRows.Count == 0
+                ? "暂无云端成绩数据"
+                : $"已读取 {_allRows.Count} 条云端成绩明细";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            _allRows = [];
+            PopulateStudents();
+            RefreshTrend();
+            StatusText.Text = "云端成绩数据读取失败";
+            MessageBox.Show(ex.Message, "读取云端成绩失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     private void PopulateStudents()
