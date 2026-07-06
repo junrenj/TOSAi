@@ -11,7 +11,7 @@ public partial class StudentTrendView : UserControl
 {
     private const string AllSubjects = "全部学科";
 
-    private readonly IScoreStore _scoreStore = new HttpScoreStore("https://tosai.onrender.com");
+    private readonly IScoreStore _scoreStore = new HttpScoreStore(ApiEndpointOptions.BaseUrl);
     private ObservableCollection<ScoreImportRow> _allRows = [];
     private bool _isUpdatingFilters;
 

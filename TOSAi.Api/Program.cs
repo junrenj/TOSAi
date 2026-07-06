@@ -25,8 +25,10 @@ app.MapGet("/", () => Results.Ok(new
         "GET /api/platform/{role}/{pageKey}",
         "GET /api/scores/import-rows",
         "POST /api/scores/import-rows",
+        "DELETE /api/scores/import-rows",
         "GET /api/questions/import-rows",
-        "POST /api/questions/import-rows"
+        "POST /api/questions/import-rows",
+        "DELETE /api/questions/import-rows"
     }
 }));
 
@@ -73,6 +75,12 @@ app.MapPost("/api/scores/import-rows", async (IReadOnlyList<ScoreImportRowDto> r
     return Results.Ok(new ScoreImportRowsResponse(rows, rows.Count, DatabaseConnectionOptions.HasConfiguredDatabase ? "postgres" : "memory"));
 });
 
+app.MapDelete("/api/scores/import-rows", async (IScoreImportRowStore store, CancellationToken cancellationToken) =>
+{
+    await store.ClearAsync(cancellationToken);
+    return Results.Ok(new ScoreImportRowsResponse([], 0, DatabaseConnectionOptions.HasConfiguredDatabase ? "postgres" : "memory"));
+});
+
 app.MapGet("/api/questions/import-rows", async (IQuestionBankRowStore store, CancellationToken cancellationToken) =>
 {
     IReadOnlyList<QuestionBankRowDto> rows = await store.LoadAsync(cancellationToken);
@@ -98,6 +106,12 @@ app.MapPost("/api/questions/import-rows", async (IReadOnlyList<QuestionBankRowDt
 
     await store.SaveAsync(rows, cancellationToken);
     return Results.Ok(new QuestionBankRowsResponse(rows, rows.Count, DatabaseConnectionOptions.HasConfiguredDatabase ? "postgres" : "memory"));
+});
+
+app.MapDelete("/api/questions/import-rows", async (IQuestionBankRowStore store, CancellationToken cancellationToken) =>
+{
+    await store.ClearAsync(cancellationToken);
+    return Results.Ok(new QuestionBankRowsResponse([], 0, DatabaseConnectionOptions.HasConfiguredDatabase ? "postgres" : "memory"));
 });
 
 app.Run();
@@ -295,6 +309,8 @@ interface IScoreImportRowStore
     Task<IReadOnlyList<ScoreImportRowDto>> LoadAsync(CancellationToken cancellationToken);
 
     Task SaveAsync(IReadOnlyList<ScoreImportRowDto> rows, CancellationToken cancellationToken);
+
+    Task ClearAsync(CancellationToken cancellationToken);
 }
 
 sealed class ScoreImportRowStore : IScoreImportRowStore
@@ -395,6 +411,23 @@ sealed class ScoreImportRowStore : IScoreImportRowStore
         await transaction.CommitAsync(cancellationToken);
     }
 
+    public async Task ClearAsync(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            lock (MemoryLock)
+            {
+                memoryRows.Clear();
+            }
+            return;
+        }
+
+        await using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(connectionString);
+        await EnsureSchemaAsync(dataSource, cancellationToken);
+        await using NpgsqlCommand command = dataSource.CreateCommand("delete from score_import_rows;");
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private static IReadOnlyList<ScoreImportRowDto> MergeRows(IEnumerable<ScoreImportRowDto> existingRows, IEnumerable<ScoreImportRowDto> incomingRows)
     {
         Dictionary<string, ScoreImportRowDto> merged = existingRows.ToDictionary(BuildKey, StringComparer.OrdinalIgnoreCase);
@@ -443,6 +476,8 @@ interface IQuestionBankRowStore
     Task<IReadOnlyList<QuestionBankRowDto>> LoadAsync(CancellationToken cancellationToken);
 
     Task SaveAsync(IReadOnlyList<QuestionBankRowDto> rows, CancellationToken cancellationToken);
+
+    Task ClearAsync(CancellationToken cancellationToken);
 }
 
 sealed class QuestionBankRowStore : IQuestionBankRowStore
@@ -549,6 +584,23 @@ sealed class QuestionBankRowStore : IQuestionBankRowStore
         }
 
         await transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task ClearAsync(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            lock (MemoryLock)
+            {
+                memoryRows.Clear();
+            }
+            return;
+        }
+
+        await using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(connectionString);
+        await EnsureSchemaAsync(dataSource, cancellationToken);
+        await using NpgsqlCommand command = dataSource.CreateCommand("delete from question_bank_rows;");
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static IReadOnlyList<QuestionBankRowDto> MergeRows(IEnumerable<QuestionBankRowDto> existingRows, IEnumerable<QuestionBankRowDto> incomingRows)

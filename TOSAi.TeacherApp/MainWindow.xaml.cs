@@ -9,7 +9,7 @@ namespace TOSAi.TeacherApp;
 public partial class MainWindow : Window
 {
     private readonly IPlatformApiClient _apiClient = new FallbackPlatformApiClient(
-        new HttpPlatformApiClient("https://tosai.onrender.com"),
+        new HttpPlatformApiClient(ApiEndpointOptions.BaseUrl),
         new MockPlatformApiClient());
     private readonly Dictionary<string, PageRegistration> _pages = new();
     private readonly Dictionary<UserRole, IReadOnlyList<NavigationRegistration>> _navigation = new();

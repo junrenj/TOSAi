@@ -11,7 +11,7 @@ namespace TOSAi.TeacherApp.Views;
 
 public partial class ScoreEntryView : UserControl
 {
-    private readonly IScoreStore _scoreStore = new HttpScoreStore("https://tosai.onrender.com");
+    private readonly IScoreStore _scoreStore = new HttpScoreStore(ApiEndpointOptions.BaseUrl);
     private ObservableCollection<ScoreImportRow> _importRows = [];
     private bool _hasLoadedCloudData;
 

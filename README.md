@@ -88,17 +88,31 @@ Invoke-RestMethod http://localhost:5088/
 Invoke-RestMethod http://localhost:5088/api/platform/Teacher/teacherAssignments
 ```
 
-WPF 端当前通过 `HttpPlatformApiClient` 优先请求该 API；如果 API 没启动，会自动回退到 `MockPlatformApiClient`，保证界面仍可运行。
+WPF 端默认请求该本地 API。也可以通过环境变量覆盖服务端地址：
+
+```powershell
+$env:TOSAI_API_BASE_URL="https://tosai.onrender.com"
+dotnet run --project TOSAi.TeacherApp\TOSAi.TeacherApp.csproj
+```
+
+平台页面接口不可用时会自动回退到 `MockPlatformApiClient`，保证界面仍可运行。成绩和题库读写接口不可用时会提示错误，避免误以为云端数据已经保存。
 
 当前接口：
 
 ```text
-POST /api/auth/login
-GET  /api/me
-GET  /api/platform/{role}/{pageKey}
+POST   /api/auth/login
+GET    /api/me
+GET    /api/platform/{role}/{pageKey}
+GET    /api/scores/import-rows
+POST   /api/scores/import-rows
+DELETE /api/scores/import-rows
+GET    /api/questions/import-rows
+GET    /api/questions
+POST   /api/questions/import-rows
+DELETE /api/questions/import-rows
 ```
 
-后续上云时，把 `TOSAi.Api` 部署到云服务器，再把 `HttpPlatformApiClient` 的 base URL 改成云端地址即可。数据库接入应放在 `TOSAi.Api` 内部完成，客户端不直接连接数据库。
+后续上云时，把 `TOSAi.Api` 部署到云服务器，再通过 `TOSAI_API_BASE_URL` 指向云端地址即可。数据库接入应放在 `TOSAi.Api` 内部完成，客户端不直接连接数据库。
 
 
 ## 移动端
@@ -147,20 +161,16 @@ flutter run
 在软件的“成绩录入”页面可以导出模板、导入 CSV，并预览导入明细。
 
 
-## 本地数据保存
+## 云端成绩保存
 
-“成绩录入”页面支持把导入后的成绩明细保存到本地 JSON 文件。默认位置：
+“成绩录入”页面支持把导入后的成绩明细保存到 `TOSAi.Api`。默认未配置数据库时，API 使用进程内内存存储；配置 `DATABASE_URL` 或 `POSTGRES_CONNECTION_STRING` 后会写入 PostgreSQL。
 
-```text
-%LOCALAPPDATA%\TOSAi.TeacherApp\score-import-rows.json
-```
-
-当前使用 `LocalScoreStore` 做本地持久化，避免在早期阶段引入数据库依赖。后续如果要升级为 SQLite，可以保留页面逻辑，只替换 `Services/LocalScoreStore.cs` 的实现。
+“清空云端数据”会调用 `DELETE /api/scores/import-rows`，真正删除服务端保存的成绩明细。
 
 
 ## 学生成绩趋势
 
-“学生趋势”页面会读取本地保存的成绩明细，并支持：
+“学生趋势”页面会读取云端保存的成绩明细，并支持：
 
 - 按学生筛选
 - 按学科筛选
@@ -171,8 +181,8 @@ flutter run
 
 1. 进入“成绩录入”页面。
 2. 导入 CSV 成绩模板。
-3. 点击“保存本地”。
-4. 进入“学生趋势”页面，点击“刷新本地数据”或等待自动读取。
+3. 点击“保存云端”。
+4. 进入“学生趋势”页面，点击“刷新云端数据”或等待自动读取。
 
 ## 添加新页面
 

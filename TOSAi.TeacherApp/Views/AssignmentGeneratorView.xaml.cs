@@ -22,7 +22,7 @@ public partial class AssignmentGeneratorView : UserControl
     private static readonly string[] BankHeader = ["题型", "主题", "考察方向", "情景分类", "难度", "题干", "选项A", "选项B", "选项C", "选项D", "答案", "解析"];
 
     private readonly ObservableCollection<GeneratedQuestion> _questions = [];
-    private readonly IQuestionBankStore _questionBankStore = new HttpQuestionBankStore("https://tosai.onrender.com");
+    private readonly IQuestionBankStore _questionBankStore = new HttpQuestionBankStore(ApiEndpointOptions.BaseUrl);
     private readonly ObservableCollection<QuestionBankItem> _questionBank = [];
     private readonly ObservableCollection<QuestionBankItem> _filteredQuestionBank = [];
     private int _replaceIndex = -1;

@@ -53,9 +53,14 @@ public sealed class HttpScoreStore : IScoreStore
         return response?.Rows is null ? [] : new ObservableCollection<ScoreImportRow>(response.Rows);
     }
 
-    public Task ClearAsync(CancellationToken cancellationToken = default)
+    public async Task ClearAsync(CancellationToken cancellationToken = default)
     {
-        return SaveAsync([], cancellationToken);
+        using HttpResponseMessage response = await _httpClient.DeleteAsync("api/scores/import-rows", cancellationToken);
+        string responseText = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new HttpRequestException($"云端清空失败：{(int)response.StatusCode} {response.ReasonPhrase}\n{responseText}");
+        }
     }
 
     private sealed class ScoreImportRowsResponse
