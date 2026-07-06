@@ -1,4 +1,5 @@
-﻿using Npgsql;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -6,8 +7,15 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy => policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
 });
-builder.Services.AddSingleton<IScoreImportRowStore, ScoreImportRowStore>();
-builder.Services.AddSingleton<IQuestionBankRowStore, QuestionBankRowStore>();
+string? databaseConnectionString = DatabaseConnectionOptions.ConnectionString;
+if (databaseConnectionString is not null)
+{
+    string configuredConnectionString = databaseConnectionString;
+    builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(configuredConnectionString));
+}
+
+builder.Services.AddSingleton<IScoreImportRowStore>(services => new ScoreImportRowStore(services.GetService<NpgsqlDataSource>()));
+builder.Services.AddSingleton<IQuestionBankRowStore>(services => new QuestionBankRowStore(services.GetService<NpgsqlDataSource>()));
 
 var app = builder.Build();
 
@@ -317,12 +325,16 @@ sealed class ScoreImportRowStore : IScoreImportRowStore
 {
     private static readonly object MemoryLock = new();
     private static List<ScoreImportRowDto> memoryRows = [];
-    private readonly string? connectionString = DatabaseConnectionOptions.Normalize(
-        Environment.GetEnvironmentVariable("DATABASE_URL") ?? Environment.GetEnvironmentVariable("POSTGRES_CONNECTION_STRING"));
+    private readonly NpgsqlDataSource? dataSource;
+
+    public ScoreImportRowStore(NpgsqlDataSource? dataSource)
+    {
+        this.dataSource = dataSource;
+    }
 
     public async Task<IReadOnlyList<ScoreImportRowDto>> LoadAsync(CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(connectionString))
+        if (this.dataSource is null)
         {
             lock (MemoryLock)
             {
@@ -330,7 +342,7 @@ sealed class ScoreImportRowStore : IScoreImportRowStore
             }
         }
 
-        await using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(connectionString);
+        NpgsqlDataSource dataSource = this.dataSource;
         await EnsureSchemaAsync(dataSource, cancellationToken);
         await using NpgsqlCommand command = dataSource.CreateCommand("""
             select exam_name, exam_date, grade_name, class_name, student_id, student_name, subject_name, score, full_score
@@ -359,7 +371,7 @@ sealed class ScoreImportRowStore : IScoreImportRowStore
 
     public async Task SaveAsync(IReadOnlyList<ScoreImportRowDto> rows, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(connectionString))
+        if (this.dataSource is null)
         {
             lock (MemoryLock)
             {
@@ -368,7 +380,7 @@ sealed class ScoreImportRowStore : IScoreImportRowStore
             return;
         }
 
-        await using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(connectionString);
+        NpgsqlDataSource dataSource = this.dataSource;
         await EnsureSchemaAsync(dataSource, cancellationToken);
         await using NpgsqlConnection connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -413,7 +425,7 @@ sealed class ScoreImportRowStore : IScoreImportRowStore
 
     public async Task ClearAsync(CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(connectionString))
+        if (this.dataSource is null)
         {
             lock (MemoryLock)
             {
@@ -422,7 +434,7 @@ sealed class ScoreImportRowStore : IScoreImportRowStore
             return;
         }
 
-        await using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(connectionString);
+        NpgsqlDataSource dataSource = this.dataSource;
         await EnsureSchemaAsync(dataSource, cancellationToken);
         await using NpgsqlCommand command = dataSource.CreateCommand("delete from score_import_rows;");
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -484,12 +496,16 @@ sealed class QuestionBankRowStore : IQuestionBankRowStore
 {
     private static readonly object MemoryLock = new();
     private static List<QuestionBankRowDto> memoryRows = [];
-    private readonly string? connectionString = DatabaseConnectionOptions.Normalize(
-        Environment.GetEnvironmentVariable("DATABASE_URL") ?? Environment.GetEnvironmentVariable("POSTGRES_CONNECTION_STRING"));
+    private readonly NpgsqlDataSource? dataSource;
+
+    public QuestionBankRowStore(NpgsqlDataSource? dataSource)
+    {
+        this.dataSource = dataSource;
+    }
 
     public async Task<IReadOnlyList<QuestionBankRowDto>> LoadAsync(CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(connectionString))
+        if (this.dataSource is null)
         {
             lock (MemoryLock)
             {
@@ -497,7 +513,7 @@ sealed class QuestionBankRowStore : IQuestionBankRowStore
             }
         }
 
-        await using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(connectionString);
+        NpgsqlDataSource dataSource = this.dataSource;
         await EnsureSchemaAsync(dataSource, cancellationToken);
         await using NpgsqlCommand command = dataSource.CreateCommand("""
             select type, topic, direction, scenario, difficulty, stem, option_a, option_b, option_c, option_d, answer, explanation
@@ -529,7 +545,7 @@ sealed class QuestionBankRowStore : IQuestionBankRowStore
 
     public async Task SaveAsync(IReadOnlyList<QuestionBankRowDto> rows, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(connectionString))
+        if (this.dataSource is null)
         {
             lock (MemoryLock)
             {
@@ -538,7 +554,7 @@ sealed class QuestionBankRowStore : IQuestionBankRowStore
             return;
         }
 
-        await using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(connectionString);
+        NpgsqlDataSource dataSource = this.dataSource;
         await EnsureSchemaAsync(dataSource, cancellationToken);
         await using NpgsqlConnection connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -588,7 +604,7 @@ sealed class QuestionBankRowStore : IQuestionBankRowStore
 
     public async Task ClearAsync(CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(connectionString))
+        if (this.dataSource is null)
         {
             lock (MemoryLock)
             {
@@ -597,7 +613,7 @@ sealed class QuestionBankRowStore : IQuestionBankRowStore
             return;
         }
 
-        await using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(connectionString);
+        NpgsqlDataSource dataSource = this.dataSource;
         await EnsureSchemaAsync(dataSource, cancellationToken);
         await using NpgsqlCommand command = dataSource.CreateCommand("delete from question_bank_rows;");
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -652,8 +668,10 @@ sealed class QuestionBankRowStore : IQuestionBankRowStore
 }
 static class DatabaseConnectionOptions
 {
-    public static bool HasConfiguredDatabase => !string.IsNullOrWhiteSpace(Normalize(
-        Environment.GetEnvironmentVariable("DATABASE_URL") ?? Environment.GetEnvironmentVariable("POSTGRES_CONNECTION_STRING")));
+    public static string? ConnectionString => Normalize(
+        Environment.GetEnvironmentVariable("DATABASE_URL") ?? Environment.GetEnvironmentVariable("POSTGRES_CONNECTION_STRING"));
+
+    public static bool HasConfiguredDatabase => ConnectionString is not null;
 
     public static string? Normalize(string? connectionString)
     {
