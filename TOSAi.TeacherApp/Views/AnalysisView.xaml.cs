@@ -12,8 +12,10 @@ namespace TOSAi.TeacherApp.Views;
 public partial class AnalysisView : UserControl
 {
     private readonly AiSettingsStore _settingsStore = new();
-    private readonly LocalScoreStore _scoreStore = new();
+    private readonly IScoreStore _scoreStore = new HttpScoreStore(ApiEndpointOptions.BaseUrl);
+    private readonly IReportDraftStore _reportDraftStore = new HttpReportDraftStore(ApiEndpointOptions.BaseUrl);
     private readonly IAiAnalysisService _mockAnalysisService = new MockAiAnalysisService();
+    private ReportDraft? _pendingReportDraft;
 
     public AnalysisView()
     {
@@ -23,6 +25,8 @@ public partial class AnalysisView : UserControl
     private async void GenerateButton_Click(object sender, RoutedEventArgs e)
     {
         GenerateButton.IsEnabled = false;
+        SaveReportButton.IsEnabled = false;
+        _pendingReportDraft = null;
         SummaryTextBox.Text = "正在生成分析...";
         SuggestionsTextBox.Text = string.Empty;
 
@@ -44,7 +48,15 @@ public partial class AnalysisView : UserControl
             AiAnalysisResult result = await analysisService.AnalyzeAsync(new AiAnalysisRequest(scope, prompt));
             SummaryTextBox.Text = result.Summary;
             SuggestionsTextBox.Text = result.Suggestions;
-            ServiceStatusText.Text = settings.UseMockAnalysis ? "模拟分析完成。" : "真实 AI 分析完成。";
+            _pendingReportDraft = new ReportDraft
+            {
+                Scope = scope,
+                Prompt = PromptTextBox.Text.Trim(),
+                Summary = result.Summary,
+                Suggestions = result.Suggestions
+            };
+            SaveReportButton.IsEnabled = true;
+            ServiceStatusText.Text = settings.UseMockAnalysis ? "模拟分析完成，可保存为报告草稿。" : "真实 AI 分析完成，可保存为报告草稿。";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or HttpRequestException or TaskCanceledException or InvalidOperationException or JsonException)
         {
@@ -58,6 +70,27 @@ public partial class AnalysisView : UserControl
         }
     }
 
+    private async void SaveReportButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_pendingReportDraft is null)
+        {
+            MessageBox.Show("请先生成分析报告。", "保存报告草稿", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        SaveReportButton.IsEnabled = false;
+        try
+        {
+            ReportDraft saved = await _reportDraftStore.SaveAsync(_pendingReportDraft);
+            _pendingReportDraft = saved;
+            ServiceStatusText.Text = $"报告草稿已保存：{saved.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm}";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or HttpRequestException or TaskCanceledException or InvalidOperationException or JsonException)
+        {
+            MessageBox.Show(ex.Message, "保存报告草稿失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            SaveReportButton.IsEnabled = true;
+        }
+    }
     private static string BuildPrompt(string userPrompt, IReadOnlyList<ScoreImportRow> rows)
     {
         StringBuilder builder = new();
@@ -74,11 +107,11 @@ public partial class AnalysisView : UserControl
 
         if (rows.Count == 0)
         {
-            builder.AppendLine("当前本地没有保存成绩明细，请基于教师要求给出通用分析框架。 ");
+            builder.AppendLine("当前云端没有保存成绩明细，请基于教师要求给出通用分析框架。");
             return builder.ToString();
         }
 
-        builder.AppendLine("本地成绩明细，格式：考试名称 | 日期 | 年级 | 班级 | 学号 | 姓名 | 学科 | 分数/满分 | 得分率");
+        builder.AppendLine("云端成绩明细，格式：考试名称 | 日期 | 年级 | 班级 | 学号 | 姓名 | 学科 | 分数/满分 | 得分率");
 
         foreach (ScoreImportRow row in rows.Take(200))
         {

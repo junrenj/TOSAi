@@ -11,6 +11,13 @@ public partial class App : Application
 
         base.OnStartup(e);
 
+        LoginWindow loginWindow = new();
+        if (loginWindow.ShowDialog() != true)
+        {
+            Shutdown();
+            return;
+        }
+
         MainWindow = new MainWindow();
         MainWindow.Show();
     }

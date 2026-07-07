@@ -33,6 +33,7 @@ public sealed class HttpScoreStore : IScoreStore
             BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/"),
             Timeout = TimeSpan.FromSeconds(20)
         };
+        AuthSession.Apply(_httpClient);
     }
 
     public string Description => _httpClient.BaseAddress?.ToString().TrimEnd('/') ?? "云端 API";

@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.VisualBasic.FileIO;
@@ -22,6 +23,8 @@ public partial class AssignmentGeneratorView : UserControl
     private static readonly string[] BankHeader = ["题型", "主题", "考察方向", "情景分类", "难度", "题干", "选项A", "选项B", "选项C", "选项D", "答案", "解析"];
 
     private readonly ObservableCollection<GeneratedQuestion> _questions = [];
+    private readonly AiSettingsStore _settingsStore = new();
+    private readonly IQuestionGenerationService _mockQuestionGenerationService = new MockQuestionGenerationService();
     private readonly IQuestionBankStore _questionBankStore = new HttpQuestionBankStore(ApiEndpointOptions.BaseUrl);
     private readonly ObservableCollection<QuestionBankItem> _questionBank = [];
     private readonly ObservableCollection<QuestionBankItem> _filteredQuestionBank = [];
@@ -112,6 +115,130 @@ public partial class AssignmentGeneratorView : UserControl
         _replaceIndex = -1;
     }
 
+    private async void AiGenerateButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!TryReadPositiveNumber(ChoiceCountTextBox.Text, "选择题数量", out int choiceCount) ||
+            !TryReadPositiveNumber(EssayCountTextBox.Text, "大题数量", out int essayCount))
+        {
+            return;
+        }
+
+        int totalCount = choiceCount + essayCount;
+        if (totalCount == 0)
+        {
+            MessageBox.Show("请至少设置一道要生成的题目。", "AI 生成新题", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (totalCount > 10)
+        {
+            MessageBox.Show("AI 生成新题一次最多生成 10 道，请减少选择题或大题数量。", "AI 生成新题", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (_questionBank.Count == 0)
+        {
+            await LoadCloudBankAsync(showEmptyMessage: true);
+        }
+
+        if (_questionBank.Count == 0)
+        {
+            MessageBox.Show("云端题库还没有可参考的题目。请先在“题库管理”中导入并保存题库。", "AI 生成新题", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        string[] selectedTopics = GetSelectedItems(TopicListBox, Topics);
+        string[] selectedDirections = GetSelectedItems(DirectionListBox, Directions);
+        string[] selectedScenarios = GetSelectedItems(ScenarioListBox, Scenarios);
+        string difficulty = DifficultyComboBox.SelectedItem?.ToString() ?? Difficulties[1];
+        IReadOnlyList<QuestionGenerationReference> references = BuildGenerationReferences(selectedTopics, selectedDirections, selectedScenarios, difficulty);
+
+        AiGenerateButton.IsEnabled = false;
+        StatusText.Text = "正在基于云端题库生成 AI 新题...";
+
+        try
+        {
+            AiSettings settings = await _settingsStore.LoadAsync();
+            IQuestionGenerationService generationService = settings.UseMockAnalysis
+                ? _mockQuestionGenerationService
+                : new OpenAiCompatibleQuestionGenerationService(settings);
+
+            QuestionGenerationRequest request = new(difficulty, selectedTopics, selectedDirections, selectedScenarios, choiceCount, essayCount, references);
+            IReadOnlyList<GeneratedQuestionDraft> drafts = await generationService.GenerateAsync(request);
+            int nextNumber = _questions.Count + 1;
+            foreach (GeneratedQuestionDraft draft in drafts)
+            {
+                _questions.Add(ToGeneratedQuestion(draft, nextNumber++));
+            }
+
+            _assignmentTitle = "高中生物遗传与进化专题作业";
+            _assignmentMeta = $"主题：{string.Join("、", selectedTopics)}；方向：{string.Join("、", selectedDirections)}；情景：{string.Join("、", selectedScenarios)}；难度：{difficulty}；共 {_questions.Count} 题，含 AI 基于云端题库生成的新题。";
+            PreviewTitleText.Text = _assignmentTitle;
+            PreviewMetaText.Text = _assignmentMeta;
+            StatusText.Text = settings.UseMockAnalysis
+                ? $"已用模拟 AI 生成 {drafts.Count} 道新题，并加入作业预览。请在系统设置中配置真实 AI 后生成正式草稿。"
+                : $"已基于 {references.Count} 道云端参考题生成 {drafts.Count} 道新题，并加入作业预览。";
+            ReplacePanel.Visibility = Visibility.Collapsed;
+            _replaceIndex = -1;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or HttpRequestException or TaskCanceledException or InvalidOperationException or JsonException)
+        {
+            MessageBox.Show(ex.Message, "AI 生成新题失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            StatusText.Text = "AI 生成新题失败。";
+        }
+        finally
+        {
+            AiGenerateButton.IsEnabled = true;
+        }
+    }
+
+    private IReadOnlyList<QuestionGenerationReference> BuildGenerationReferences(IReadOnlyList<string> topics, IReadOnlyList<string> directions, IReadOnlyList<string> scenarios, string difficulty)
+    {
+        List<QuestionBankItem> candidates = _questionBank
+            .Where(item => topics.Contains(item.Topic) || directions.Contains(item.Direction) || scenarios.Contains(item.Scenario) || item.Difficulty == difficulty)
+            .OrderByDescending(item => topics.Contains(item.Topic))
+            .ThenByDescending(item => item.Difficulty == difficulty)
+            .ThenByDescending(item => directions.Contains(item.Direction))
+            .ThenByDescending(item => scenarios.Contains(item.Scenario))
+            .Take(8)
+            .ToList();
+
+        if (candidates.Count == 0)
+        {
+            candidates = _questionBank.Take(8).ToList();
+        }
+
+        return candidates.Select(ToGenerationReference).ToList();
+    }
+
+    private static QuestionGenerationReference ToGenerationReference(QuestionBankItem item)
+    {
+        return new QuestionGenerationReference(
+            item.Type,
+            item.Topic,
+            item.Direction,
+            item.Scenario,
+            item.Difficulty,
+            item.Stem,
+            item.Options.Select(option => option.Text).ToList(),
+            item.Answer,
+            item.Explanation);
+    }
+
+    private static GeneratedQuestion ToGeneratedQuestion(GeneratedQuestionDraft draft, int number)
+    {
+        ObservableCollection<QuestionOption> options = new(draft.Options.Select(option => new QuestionOption(option)));
+        return new GeneratedQuestion(
+            number,
+            draft.Type,
+            draft.Difficulty,
+            draft.Topic,
+            draft.Direction,
+            draft.Scenario,
+            draft.Stem,
+            options,
+            draft.Answer);
+    }
     private static bool TryReadPositiveNumber(string text, string label, out int value)
     {
         if (int.TryParse(text.Trim(), out value) && value >= 0 && value <= 50)

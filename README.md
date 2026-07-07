@@ -42,6 +42,21 @@ private readonly IPlatformApiClient _apiClient = new MockPlatformApiClient();
 ```
 
 替换成真实 API 客户端即可。页面层不需要大改。
+
+## 登录和权限
+
+当前桌面端启动时会先进入登录窗口，登录接口由本地后端 `TOSAi.Api` 提供。因此请先启动 API，再启动 WPF 桌面端。
+
+演示账号：
+
+| 角色 | 账号 | 密码 |
+| --- | --- | --- |
+| 教师端 | teacher | teacher123 |
+| 学生端 | student | student123 |
+| 家长端 | parent | parent123 |
+
+登录成功后客户端会携带 Bearer token 请求 API。教师端成绩、题库和报告草稿接口需要教师 token；跨角色访问平台页面会返回 403。
+
 ## 运行
 
 ```powershell
@@ -193,6 +208,19 @@ flutter run
 ```csharp
 _pages["classCompare"] = new("班级对比", "查看班级之间的成绩差异。", new ClassCompareView());
 ```
+
+
+## AI 报告草稿
+
+“AI 分析”页面生成结果后，可以点击“保存为报告草稿”。草稿会保存到后端 API：
+
+```text
+GET    /api/reports/drafts
+POST   /api/reports/drafts
+DELETE /api/reports/drafts/{id}
+```
+
+“报告中心”页面会读取这些草稿，并支持查看、导出 TXT 和删除。
 
 ## 接入真实 AI
 

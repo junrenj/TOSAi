@@ -15,6 +15,7 @@ public sealed class HttpPlatformApiClient : IPlatformApiClient
             BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/"),
             Timeout = TimeSpan.FromSeconds(5)
         };
+        AuthSession.Apply(_httpClient);
     }
 
     public async Task<PlatformFeaturePage> GetFeaturePageAsync(UserRole role, string pageKey, CancellationToken cancellationToken = default)

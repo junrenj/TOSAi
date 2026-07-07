@@ -21,8 +21,20 @@ public partial class MainWindow : Window
         InitializeComponent();
         RegisterPages();
         RegisterNavigation();
-        RoleComboBox.SelectedIndex = 0;
-        SwitchRole(UserRole.Teacher);
+        UserRole signedInRole = ReadSignedInRole();
+        RoleComboBox.SelectedIndex = signedInRole switch
+        {
+            UserRole.Student => 1,
+            UserRole.Parent => 2,
+            _ => 0
+        };
+        RoleComboBox.IsEnabled = false;
+        SwitchRole(signedInRole);
+    }
+
+    private static UserRole ReadSignedInRole()
+    {
+        return Enum.TryParse(AuthSession.User?.Role, out UserRole role) ? role : UserRole.Teacher;
     }
 
     private void RegisterPages()
@@ -31,9 +43,10 @@ public partial class MainWindow : Window
         _pages["teacherStudents"] = new("学生档案", "查看学生分布、名单概览和关注学生情况。", () => new StudentListView());
         _pages["teacherScores"] = new("成绩录入", "通过 CSV 模板导入扫描或考试成绩，并保存到云端数据层。", () => new ScoreEntryView());
         _pages["teacherTrends"] = new("学生趋势", "读取云端成绩明细，按学生和学科查看历次成绩变化。", () => new StudentTrendView());
+        _pages["teacherAnalysis"] = new("AI 分析", "读取云端成绩明细，生成可执行的教学分析和分层建议。", () => new AnalysisView());
         _pages["teacherAssignmentGenerator"] = new("生成作业", "按主题、能力方向、情景分类和难度生成作业。", () => new AssignmentGeneratorView());
         _pages["teacherAssignments"] = new("作业管理", "按学生和日期查看作业完成情况和学习记录。", () => new AssignmentManagementView());
-        _pages["teacherReports"] = new("报告中心", "管理周报、家长报告、风险提醒和阅读反馈。", () => new PlatformFeatureView(_apiClient, UserRole.Teacher, "teacherReports"));
+        _pages["teacherReports"] = new("报告中心", "查看 AI 分析保存的报告草稿，并支持导出和删除。", () => new ReportCenterView());
 
         _pages["studentHome"] = new("学生首页", "查看今日任务、学习计划和当前学习状态。", () => new PlatformFeatureView(_apiClient, UserRole.Student, "studentHome"));
         _pages["studentHomework"] = new("我的作业", "查看待完成、已提交和待订正作业。", () => new PlatformFeatureView(_apiClient, UserRole.Student, "studentHomework"));
@@ -56,6 +69,7 @@ public partial class MainWindow : Window
             new("teacherStudents", "学生档案"),
             new("teacherScores", "成绩录入"),
             new("teacherTrends", "学生趋势"),
+            new("teacherAnalysis", "AI 分析"),
             new("teacherAssignmentGenerator", "生成作业"),
             new("teacherAssignments", "作业管理"),
             new("teacherReports", "报告中心")

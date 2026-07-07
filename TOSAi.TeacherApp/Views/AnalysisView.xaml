@@ -36,6 +36,12 @@
                         Margin="0,18,0,0"
                         Style="{StaticResource PrimaryButton}"
                         Click="GenerateButton_Click" />
+                <Button x:Name="SaveReportButton"
+                        Content="保存为报告草稿"
+                        Margin="0,10,0,0"
+                        Style="{StaticResource SecondaryButton}"
+                        IsEnabled="False"
+                        Click="SaveReportButton_Click" />
                 <TextBlock x:Name="ServiceStatusText"
                            Margin="0,14,0,0"
                            Foreground="{StaticResource TextMutedBrush}"
@@ -46,7 +52,7 @@
         <Border Grid.Column="2" Style="{StaticResource Card}">
             <StackPanel>
                 <TextBlock Text="AI 输出预览" Style="{StaticResource SectionTitle}" />
-                <TextBlock Text="分析页会自动读取本地保存的成绩明细，并把它们作为上下文发送给已配置的 AI 接口。"
+                <TextBlock Text="分析页会自动读取云端保存的成绩明细，并把它们作为上下文发送给已配置的 AI 接口。"
                            Style="{StaticResource MutedText}"
                            Margin="0,0,0,16" />
                 <TextBlock Text="摘要" FontWeight="SemiBold" />

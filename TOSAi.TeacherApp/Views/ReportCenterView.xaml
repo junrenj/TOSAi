@@ -1,0 +1,87 @@
+﻿<UserControl x:Class="TOSAi.TeacherApp.Views.ReportCenterView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DesignHeight="620"
+             d:DesignWidth="880">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="360" />
+            <ColumnDefinition Width="18" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <Border Grid.Column="0" Style="{StaticResource Card}">
+            <DockPanel LastChildFill="True">
+                <StackPanel DockPanel.Dock="Top">
+                    <TextBlock Text="报告草稿" Style="{StaticResource SectionTitle}" />
+                    <TextBlock x:Name="StatusText"
+                               Text="AI 分析保存后的草稿会显示在这里。"
+                               Style="{StaticResource MutedText}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,14" />
+                    <Button Content="刷新"
+                            Style="{StaticResource SecondaryButton}"
+                            Click="RefreshButton_Click"
+                            Margin="0,0,0,12" />
+                </StackPanel>
+
+                <DataGrid x:Name="DraftsDataGrid"
+                          SelectionChanged="DraftsDataGrid_SelectionChanged"
+                          ItemsSource="{Binding}"
+                          IsReadOnly="True">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="时间" Binding="{Binding CreatedAtText}" Width="120" />
+                        <DataGridTextColumn Header="范围" Binding="{Binding Scope}" Width="80" />
+                        <DataGridTextColumn Header="摘要" Binding="{Binding ShortSummary}" Width="*" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
+        </Border>
+
+        <Border Grid.Column="2" Style="{StaticResource Card}">
+            <DockPanel LastChildFill="True">
+                <StackPanel DockPanel.Dock="Top">
+                    <TextBlock Text="草稿详情" Style="{StaticResource SectionTitle}" />
+                    <WrapPanel Margin="0,0,0,14">
+                        <Button Content="导出 TXT"
+                                Style="{StaticResource SecondaryButton}"
+                                Click="ExportButton_Click"
+                                Margin="0,0,10,0" />
+                        <Button Content="删除草稿"
+                                Style="{StaticResource SecondaryButton}"
+                                Click="DeleteButton_Click" />
+                    </WrapPanel>
+                </StackPanel>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock Text="摘要" FontWeight="SemiBold" />
+                        <TextBox x:Name="SummaryTextBox"
+                                 Margin="0,8,0,16"
+                                 MinHeight="90"
+                                 IsReadOnly="True"
+                                 TextWrapping="Wrap"
+                                 VerticalScrollBarVisibility="Auto" />
+                        <TextBlock Text="教学建议" FontWeight="SemiBold" />
+                        <TextBox x:Name="SuggestionsTextBox"
+                                 Margin="0,8,0,16"
+                                 MinHeight="260"
+                                 IsReadOnly="True"
+                                 TextWrapping="Wrap"
+                                 VerticalScrollBarVisibility="Auto" />
+                        <TextBlock Text="原始要求" FontWeight="SemiBold" />
+                        <TextBox x:Name="PromptTextBox"
+                                 Margin="0,8,0,0"
+                                 MinHeight="80"
+                                 IsReadOnly="True"
+                                 TextWrapping="Wrap"
+                                 VerticalScrollBarVisibility="Auto" />
+                    </StackPanel>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+    </Grid>
+</UserControl>

@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using System.Security.Cryptography;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -16,6 +17,7 @@ if (databaseConnectionString is not null)
 
 builder.Services.AddSingleton<IScoreImportRowStore>(services => new ScoreImportRowStore(services.GetService<NpgsqlDataSource>()));
 builder.Services.AddSingleton<IQuestionBankRowStore>(services => new QuestionBankRowStore(services.GetService<NpgsqlDataSource>()));
+builder.Services.AddSingleton<IReportDraftStore>(services => new ReportDraftStore(services.GetService<NpgsqlDataSource>()));
 
 var app = builder.Build();
 
@@ -36,7 +38,10 @@ app.MapGet("/", () => Results.Ok(new
         "DELETE /api/scores/import-rows",
         "GET /api/questions/import-rows",
         "POST /api/questions/import-rows",
-        "DELETE /api/questions/import-rows"
+        "DELETE /api/questions/import-rows",
+        "GET    /api/reports/drafts",
+        "POST   /api/reports/drafts",
+        "DELETE /api/reports/drafts/{id}"
     }
 }));
 
@@ -44,32 +49,55 @@ app.MapPost("/api/auth/login", (LoginRequest request) =>
 {
     string role = string.IsNullOrWhiteSpace(request.Role) ? "Teacher" : request.Role.Trim();
     string username = string.IsNullOrWhiteSpace(request.Username) ? role.ToLowerInvariant() : request.Username.Trim();
+    string password = request.Password?.Trim() ?? string.Empty;
 
-    return Results.Ok(new LoginResponse(
-        Token: $"demo-{role.ToLowerInvariant()}-token",
-        User: new CurrentUser(username, role, GetDisplayName(role))));
+    DemoAccount? account = AuthState.FindAccount(username);
+    if (account is null || !string.Equals(account.Password, password, StringComparison.Ordinal) || !string.Equals(account.Role, role, StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.Unauthorized();
+    }
+
+    CurrentUser user = new(account.Username, account.Role, account.DisplayName);
+    string token = AuthState.IssueToken(user);
+    return Results.Ok(new LoginResponse(token, user));
 });
 
 app.MapGet("/api/me", (HttpRequest request) =>
 {
-    string role = ReadRoleFromBearerToken(request) ?? "Teacher";
-    return Results.Ok(new CurrentUser($"demo-{role.ToLowerInvariant()}", role, GetDisplayName(role)));
+    CurrentUser? user = ReadCurrentUser(request);
+    return user is null ? Results.Unauthorized() : Results.Ok(user);
 });
-
-app.MapGet("/api/platform/{role}/{pageKey}", (string role, string pageKey) =>
+app.MapGet("/api/platform/{role}/{pageKey}", (HttpRequest request, string role, string pageKey) =>
 {
+    IResult? authorization = RequireRole(request, role);
+    if (authorization is not null)
+    {
+        return authorization;
+    }
+
     PlatformFeaturePage page = CreatePage(role, pageKey);
     return Results.Ok(page);
 });
-
-app.MapGet("/api/scores/import-rows", async (IScoreImportRowStore store, CancellationToken cancellationToken) =>
+app.MapGet("/api/scores/import-rows", async (HttpRequest request, IScoreImportRowStore store, CancellationToken cancellationToken) =>
 {
+    IResult? authorization = RequireTeacher(request);
+    if (authorization is not null)
+    {
+        return authorization;
+    }
+
     IReadOnlyList<ScoreImportRowDto> rows = await store.LoadAsync(cancellationToken);
     return Results.Ok(new ScoreImportRowsResponse(rows, rows.Count, DatabaseConnectionOptions.HasConfiguredDatabase ? "postgres" : "memory"));
 });
 
-app.MapPost("/api/scores/import-rows", async (IReadOnlyList<ScoreImportRowDto> rows, IScoreImportRowStore store, CancellationToken cancellationToken) =>
+app.MapPost("/api/scores/import-rows", async (HttpRequest request, IReadOnlyList<ScoreImportRowDto> rows, IScoreImportRowStore store, CancellationToken cancellationToken) =>
 {
+    IResult? authorization = RequireTeacher(request);
+    if (authorization is not null)
+    {
+        return authorization;
+    }
+
     if (rows.Count > 0)
     {
         string? validationError = ValidateScoreRows(rows);
@@ -83,26 +111,50 @@ app.MapPost("/api/scores/import-rows", async (IReadOnlyList<ScoreImportRowDto> r
     return Results.Ok(new ScoreImportRowsResponse(rows, rows.Count, DatabaseConnectionOptions.HasConfiguredDatabase ? "postgres" : "memory"));
 });
 
-app.MapDelete("/api/scores/import-rows", async (IScoreImportRowStore store, CancellationToken cancellationToken) =>
+app.MapDelete("/api/scores/import-rows", async (HttpRequest request, IScoreImportRowStore store, CancellationToken cancellationToken) =>
 {
+    IResult? authorization = RequireTeacher(request);
+    if (authorization is not null)
+    {
+        return authorization;
+    }
+
     await store.ClearAsync(cancellationToken);
     return Results.Ok(new ScoreImportRowsResponse([], 0, DatabaseConnectionOptions.HasConfiguredDatabase ? "postgres" : "memory"));
 });
 
-app.MapGet("/api/questions/import-rows", async (IQuestionBankRowStore store, CancellationToken cancellationToken) =>
+app.MapGet("/api/questions/import-rows", async (HttpRequest request, IQuestionBankRowStore store, CancellationToken cancellationToken) =>
 {
+    IResult? authorization = RequireTeacher(request);
+    if (authorization is not null)
+    {
+        return authorization;
+    }
+
     IReadOnlyList<QuestionBankRowDto> rows = await store.LoadAsync(cancellationToken);
     return Results.Ok(new QuestionBankRowsResponse(rows, rows.Count, DatabaseConnectionOptions.HasConfiguredDatabase ? "postgres" : "memory"));
 });
 
-app.MapGet("/api/questions", async (IQuestionBankRowStore store, CancellationToken cancellationToken) =>
+app.MapGet("/api/questions", async (HttpRequest request, IQuestionBankRowStore store, CancellationToken cancellationToken) =>
 {
+    IResult? authorization = RequireTeacher(request);
+    if (authorization is not null)
+    {
+        return authorization;
+    }
+
     IReadOnlyList<QuestionBankRowDto> rows = await store.LoadAsync(cancellationToken);
     return Results.Ok(new QuestionBankRowsResponse(rows, rows.Count, DatabaseConnectionOptions.HasConfiguredDatabase ? "postgres" : "memory"));
 });
 
-app.MapPost("/api/questions/import-rows", async (IReadOnlyList<QuestionBankRowDto> rows, IQuestionBankRowStore store, CancellationToken cancellationToken) =>
+app.MapPost("/api/questions/import-rows", async (HttpRequest request, IReadOnlyList<QuestionBankRowDto> rows, IQuestionBankRowStore store, CancellationToken cancellationToken) =>
 {
+    IResult? authorization = RequireTeacher(request);
+    if (authorization is not null)
+    {
+        return authorization;
+    }
+
     if (rows.Count > 0)
     {
         string? validationError = ValidateQuestionRows(rows);
@@ -116,14 +168,107 @@ app.MapPost("/api/questions/import-rows", async (IReadOnlyList<QuestionBankRowDt
     return Results.Ok(new QuestionBankRowsResponse(rows, rows.Count, DatabaseConnectionOptions.HasConfiguredDatabase ? "postgres" : "memory"));
 });
 
-app.MapDelete("/api/questions/import-rows", async (IQuestionBankRowStore store, CancellationToken cancellationToken) =>
+app.MapDelete("/api/questions/import-rows", async (HttpRequest request, IQuestionBankRowStore store, CancellationToken cancellationToken) =>
 {
+    IResult? authorization = RequireTeacher(request);
+    if (authorization is not null)
+    {
+        return authorization;
+    }
+
     await store.ClearAsync(cancellationToken);
     return Results.Ok(new QuestionBankRowsResponse([], 0, DatabaseConnectionOptions.HasConfiguredDatabase ? "postgres" : "memory"));
 });
 
+app.MapGet("/api/reports/drafts", async (HttpRequest request, IReportDraftStore store, CancellationToken cancellationToken) =>
+{
+    IResult? authorization = RequireTeacher(request);
+    if (authorization is not null)
+    {
+        return authorization;
+    }
+
+    IReadOnlyList<ReportDraftDto> rows = await store.LoadAsync(cancellationToken);
+    return Results.Ok(new ReportDraftRowsResponse(rows, rows.Count, DatabaseConnectionOptions.HasConfiguredDatabase ? "postgres" : "memory"));
+});
+
+app.MapPost("/api/reports/drafts", async (HttpRequest request, ReportDraftDto draft, IReportDraftStore store, CancellationToken cancellationToken) =>
+{
+    IResult? authorization = RequireTeacher(request);
+    if (authorization is not null)
+    {
+        return authorization;
+    }
+
+    string? validationError = ValidateReportDraft(draft);
+    if (validationError is not null)
+    {
+        return Results.BadRequest(new { message = validationError });
+    }
+
+    ReportDraftDto saved = await store.SaveAsync(draft, cancellationToken);
+    return Results.Ok(saved);
+});
+
+app.MapDelete("/api/reports/drafts/{id}", async (HttpRequest request, string id, IReportDraftStore store, CancellationToken cancellationToken) =>
+{
+    IResult? authorization = RequireTeacher(request);
+    if (authorization is not null)
+    {
+        return authorization;
+    }
+
+    await store.DeleteAsync(id, cancellationToken);
+    return Results.NoContent();
+});
 app.Run();
 
+static IResult? RequireTeacher(HttpRequest request)
+{
+    IResult? authorization = RequireRole(request, "Teacher");
+    return authorization;
+}
+
+static IResult? RequireRole(HttpRequest request, string role)
+{
+    CurrentUser? user = ReadCurrentUser(request);
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    return string.Equals(user.Role, role, StringComparison.OrdinalIgnoreCase)
+        ? null
+        : Results.StatusCode(StatusCodes.Status403Forbidden);
+}
+
+static CurrentUser? ReadCurrentUser(HttpRequest request)
+{
+    string? authorization = request.Headers.Authorization.FirstOrDefault();
+    if (authorization is null || !authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+    {
+        return null;
+    }
+
+    string token = authorization["Bearer ".Length..].Trim();
+    return AuthState.FindUser(token);
+}
+
+static string? ValidateReportDraft(ReportDraftDto? draft)
+{
+    if (draft is null)
+    {
+        return "请提交报告草稿。";
+    }
+
+    if (string.IsNullOrWhiteSpace(draft.Scope) || string.IsNullOrWhiteSpace(draft.Prompt) ||
+        string.IsNullOrWhiteSpace(draft.Summary) || string.IsNullOrWhiteSpace(draft.Suggestions))
+    {
+        return "报告草稿的范围、原始要求、摘要和教学建议不能为空。";
+    }
+
+    return null;
+}
 static string? ValidateScoreRows(IReadOnlyList<ScoreImportRowDto>? rows)
 {
     if (rows is null || rows.Count == 0)
@@ -183,27 +328,6 @@ static string? ValidateQuestionRows(IReadOnlyList<QuestionBankRowDto>? rows)
 
     return null;
 }
-
-static string? ReadRoleFromBearerToken(HttpRequest request)
-{
-    string? authorization = request.Headers.Authorization.FirstOrDefault();
-    if (authorization is null || !authorization.StartsWith("Bearer demo-", StringComparison.OrdinalIgnoreCase))
-    {
-        return null;
-    }
-
-    string token = authorization["Bearer demo-".Length..];
-    int suffixIndex = token.IndexOf("-token", StringComparison.OrdinalIgnoreCase);
-    return suffixIndex > 0 ? token[..suffixIndex] : null;
-}
-
-static string GetDisplayName(string role) => role.ToLowerInvariant() switch
-{
-    "teacher" => "教师演示账号",
-    "student" => "学生演示账号",
-    "parent" => "家长演示账号",
-    _ => "演示账号"
-};
 
 static PlatformFeaturePage CreatePage(string role, string pageKey)
 {
@@ -666,6 +790,176 @@ sealed class QuestionBankRowStore : IQuestionBankRowStore
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 }
+interface IReportDraftStore
+{
+    Task<IReadOnlyList<ReportDraftDto>> LoadAsync(CancellationToken cancellationToken);
+
+    Task<ReportDraftDto> SaveAsync(ReportDraftDto draft, CancellationToken cancellationToken);
+
+    Task DeleteAsync(string id, CancellationToken cancellationToken);
+}
+
+sealed class ReportDraftStore : IReportDraftStore
+{
+    private static readonly object MemoryLock = new();
+    private static List<ReportDraftDto> memoryRows = [];
+    private readonly NpgsqlDataSource? dataSource;
+
+    public ReportDraftStore(NpgsqlDataSource? dataSource)
+    {
+        this.dataSource = dataSource;
+    }
+
+    public async Task<IReadOnlyList<ReportDraftDto>> LoadAsync(CancellationToken cancellationToken)
+    {
+        if (this.dataSource is null)
+        {
+            lock (MemoryLock)
+            {
+                return memoryRows.OrderByDescending(row => row.CreatedAt).ToList();
+            }
+        }
+
+        NpgsqlDataSource dataSource = this.dataSource;
+        await EnsureSchemaAsync(dataSource, cancellationToken);
+        await using NpgsqlCommand command = dataSource.CreateCommand("""
+            select id, created_at, scope, prompt, summary, suggestions
+            from report_drafts
+            order by created_at desc;
+            """);
+
+        List<ReportDraftDto> rows = [];
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new ReportDraftDto(
+                reader.GetString(0),
+                reader.GetFieldValue<DateTimeOffset>(1),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.GetString(4),
+                reader.GetString(5)));
+        }
+
+        return rows;
+    }
+
+    public async Task<ReportDraftDto> SaveAsync(ReportDraftDto draft, CancellationToken cancellationToken)
+    {
+        ReportDraftDto normalized = Normalize(draft);
+        if (this.dataSource is null)
+        {
+            lock (MemoryLock)
+            {
+                memoryRows.RemoveAll(row => row.Id == normalized.Id);
+                memoryRows.Add(normalized);
+            }
+
+            return normalized;
+        }
+
+        NpgsqlDataSource dataSource = this.dataSource;
+        await EnsureSchemaAsync(dataSource, cancellationToken);
+        await using NpgsqlCommand command = dataSource.CreateCommand("""
+            insert into report_drafts (id, created_at, scope, prompt, summary, suggestions)
+            values ($1, $2, $3, $4, $5, $6)
+            on conflict (id) do update set
+                created_at = excluded.created_at,
+                scope = excluded.scope,
+                prompt = excluded.prompt,
+                summary = excluded.summary,
+                suggestions = excluded.suggestions;
+            """);
+        command.Parameters.Add(new() { Value = normalized.Id });
+        command.Parameters.Add(new() { Value = normalized.CreatedAt });
+        command.Parameters.Add(new() { Value = normalized.Scope.Trim() });
+        command.Parameters.Add(new() { Value = normalized.Prompt.Trim() });
+        command.Parameters.Add(new() { Value = normalized.Summary.Trim() });
+        command.Parameters.Add(new() { Value = normalized.Suggestions.Trim() });
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        return normalized;
+    }
+
+    public async Task DeleteAsync(string id, CancellationToken cancellationToken)
+    {
+        if (this.dataSource is null)
+        {
+            lock (MemoryLock)
+            {
+                memoryRows.RemoveAll(row => row.Id == id);
+            }
+            return;
+        }
+
+        NpgsqlDataSource dataSource = this.dataSource;
+        await EnsureSchemaAsync(dataSource, cancellationToken);
+        await using NpgsqlCommand command = dataSource.CreateCommand("delete from report_drafts where id = $1;");
+        command.Parameters.Add(new() { Value = id });
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static ReportDraftDto Normalize(ReportDraftDto draft)
+    {
+        string id = string.IsNullOrWhiteSpace(draft.Id) ? Guid.NewGuid().ToString("N") : draft.Id.Trim();
+        DateTimeOffset createdAt = draft.CreatedAt == default ? DateTimeOffset.UtcNow : draft.CreatedAt.ToUniversalTime();
+        return draft with
+        {
+            Id = id,
+            CreatedAt = createdAt,
+            Scope = draft.Scope.Trim(),
+            Prompt = draft.Prompt.Trim(),
+            Summary = draft.Summary.Trim(),
+            Suggestions = draft.Suggestions.Trim()
+        };
+    }
+
+    private static async Task EnsureSchemaAsync(NpgsqlDataSource dataSource, CancellationToken cancellationToken)
+    {
+        await using NpgsqlCommand command = dataSource.CreateCommand("""
+            create table if not exists report_drafts (
+                id text primary key,
+                created_at timestamptz not null,
+                scope text not null,
+                prompt text not null,
+                summary text not null,
+                suggestions text not null
+            );
+            """);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+}
+static class AuthState
+{
+    private static readonly object TokenLock = new();
+    private static readonly Dictionary<string, DemoAccount> Accounts = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["teacher"] = new("teacher", "teacher123", "Teacher", "教师演示账号"),
+        ["student"] = new("student", "student123", "Student", "学生演示账号"),
+        ["parent"] = new("parent", "parent123", "Parent", "家长演示账号")
+    };
+    private static readonly Dictionary<string, CurrentUser> IssuedTokens = new(StringComparer.Ordinal);
+
+    public static DemoAccount? FindAccount(string username) => Accounts.TryGetValue(username, out DemoAccount? account) ? account : null;
+
+    public static string IssueToken(CurrentUser user)
+    {
+        string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+        lock (TokenLock)
+        {
+            IssuedTokens[token] = user;
+        }
+
+        return token;
+    }
+
+    public static CurrentUser? FindUser(string token)
+    {
+        lock (TokenLock)
+        {
+            return IssuedTokens.TryGetValue(token, out CurrentUser? user) ? user : null;
+        }
+    }
+}
 static class DatabaseConnectionOptions
 {
     public static string? ConnectionString => Normalize(
@@ -726,6 +1020,7 @@ sealed record LoginRequest(string Role, string Username, string Password);
 sealed record LoginResponse(string Token, CurrentUser User);
 
 sealed record CurrentUser(string Username, string Role, string DisplayName);
+sealed record DemoAccount(string Username, string Password, string Role, string DisplayName);
 
 sealed record PlatformFeaturePage(IReadOnlyList<PlatformMetricCard> Cards, IReadOnlyList<PlatformActivityItem> Activities, string Note);
 
@@ -735,6 +1030,7 @@ sealed record PlatformActivityItem(string Title, string Category, string TimeTex
 
 sealed record ScoreImportRowsResponse(IReadOnlyList<ScoreImportRowDto> Rows, int Count, string Storage);
 sealed record QuestionBankRowsResponse(IReadOnlyList<QuestionBankRowDto> Rows, int Count, string Storage);
+sealed record ReportDraftRowsResponse(IReadOnlyList<ReportDraftDto> Rows, int Count, string Storage);
 
 sealed record ScoreImportRowDto(
     string ExamName,
@@ -763,3 +1059,11 @@ sealed record QuestionBankRowDto(
     string OptionD,
     string Answer,
     string Explanation);
+
+sealed record ReportDraftDto(
+    string Id,
+    DateTimeOffset CreatedAt,
+    string Scope,
+    string Prompt,
+    string Summary,
+    string Suggestions);
