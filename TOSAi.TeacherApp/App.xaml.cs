@@ -11,6 +11,7 @@ public partial class App : Application
 
         base.OnStartup(e);
 
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
         LoginWindow loginWindow = new();
         if (loginWindow.ShowDialog() != true)
         {
@@ -19,6 +20,7 @@ public partial class App : Application
         }
 
         MainWindow = new MainWindow();
+        ShutdownMode = ShutdownMode.OnMainWindowClose;
         MainWindow.Show();
     }
 

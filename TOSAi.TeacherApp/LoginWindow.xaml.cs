@@ -10,6 +10,7 @@ namespace TOSAi.TeacherApp;
 public partial class LoginWindow : Window
 {
     private readonly HttpAuthClient _authClient = new(ApiEndpointOptions.BaseUrl);
+    private bool _isLoggingIn;
 
     public LoginWindow()
     {
@@ -33,22 +34,23 @@ public partial class LoginWindow : Window
         await LoginAsync();
     }
 
-    private async void PasswordBox_KeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter)
-        {
-            await LoginAsync();
-        }
-    }
-
     private async Task LoginAsync()
     {
+        if (_isLoggingIn)
+        {
+            return;
+        }
+
         if (RoleComboBox.SelectedItem is not ComboBoxItem { Tag: string role })
         {
             return;
         }
 
+        _isLoggingIn = true;
         LoginButton.IsEnabled = false;
+        RoleComboBox.IsEnabled = false;
+        UsernameTextBox.IsEnabled = false;
+        PasswordBox.IsEnabled = false;
         StatusText.Text = "正在登录...";
 
         try
@@ -56,15 +58,15 @@ public partial class LoginWindow : Window
             LoginResponse response = await _authClient.LoginAsync(role, UsernameTextBox.Text.Trim(), PasswordBox.Password.Trim());
             AuthSession.SignIn(response.Token, response.User);
             DialogResult = true;
-            Close();
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException or System.Text.Json.JsonException)
         {
             StatusText.Text = ex.Message;
-        }
-        finally
-        {
+            _isLoggingIn = false;
             LoginButton.IsEnabled = true;
+            RoleComboBox.IsEnabled = true;
+            UsernameTextBox.IsEnabled = true;
+            PasswordBox.IsEnabled = true;
         }
     }
 }

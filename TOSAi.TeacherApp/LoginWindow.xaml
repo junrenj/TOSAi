@@ -30,10 +30,11 @@
             <TextBox x:Name="UsernameTextBox" Margin="0,8,0,16" MinHeight="34" />
 
             <TextBlock Text="密码" FontWeight="SemiBold" />
-            <PasswordBox x:Name="PasswordBox" Margin="0,8,0,18" MinHeight="34" KeyDown="PasswordBox_KeyDown" />
+            <PasswordBox x:Name="PasswordBox" Margin="0,8,0,18" MinHeight="34" />
 
             <Button x:Name="LoginButton"
-                    Content="登录"
+                    Content="登录并进入系统"
+                    IsDefault="True"
                     Style="{StaticResource PrimaryButton}"
                     Click="LoginButton_Click" />
             <TextBlock x:Name="StatusText"
