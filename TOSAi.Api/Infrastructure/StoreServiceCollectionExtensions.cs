@@ -16,6 +16,7 @@ internal static class StoreServiceCollectionExtensions
 
         services.AddSingleton<IScoreImportRowStore>(provider => new ScoreImportRowStore(provider.GetService<NpgsqlDataSource>()));
         services.AddSingleton<IQuestionBankRowStore>(provider => new QuestionBankRowStore(provider.GetService<NpgsqlDataSource>()));
+        services.AddSingleton<IQuestionDraftStore>(provider => new QuestionDraftStore(provider.GetService<NpgsqlDataSource>()));
         services.AddSingleton<IReportDraftStore>(provider => new ReportDraftStore(provider.GetService<NpgsqlDataSource>()));
         return services;
     }

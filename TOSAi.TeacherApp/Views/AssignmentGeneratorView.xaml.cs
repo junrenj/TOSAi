@@ -9,6 +9,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Microsoft.VisualBasic.FileIO;
 using Microsoft.Win32;
+using TOSAi.TeacherApp.Models;
 using TOSAi.TeacherApp.Services;
 
 namespace TOSAi.TeacherApp.Views;
@@ -26,8 +27,10 @@ public partial class AssignmentGeneratorView : UserControl
     private readonly AiSettingsStore _settingsStore = new();
     private readonly IQuestionGenerationService _mockQuestionGenerationService = new MockQuestionGenerationService();
     private readonly IQuestionBankStore _questionBankStore = new HttpQuestionBankStore(ApiEndpointOptions.BaseUrl);
+    private readonly IQuestionDraftStore _questionDraftStore = new HttpQuestionDraftStore(ApiEndpointOptions.BaseUrl);
     private readonly ObservableCollection<QuestionBankItem> _questionBank = [];
     private readonly ObservableCollection<QuestionBankItem> _filteredQuestionBank = [];
+    private readonly ObservableCollection<QuestionDraft> _questionDrafts = [];
     private int _replaceIndex = -1;
     private string _assignmentTitle = "高中生物遗传与进化专题作业";
     private string _assignmentMeta = "尚未生成作业。";
@@ -38,6 +41,7 @@ public partial class AssignmentGeneratorView : UserControl
         InitializeSelectors();
         QuestionsItemsControl.ItemsSource = _questions;
         BankDataGrid.ItemsSource = _filteredQuestionBank;
+        DraftsDataGrid.ItemsSource = _questionDrafts;
         RefreshBankFilters();
         RefreshBankView();
         Loaded += AssignmentGeneratorView_Loaded;
@@ -48,6 +52,7 @@ public partial class AssignmentGeneratorView : UserControl
     {
         Loaded -= AssignmentGeneratorView_Loaded;
         await LoadCloudBankAsync(showEmptyMessage: false);
+        await LoadQuestionDraftsAsync(showError: false);
     }
 
     private void InitializeSelectors()
@@ -117,8 +122,8 @@ public partial class AssignmentGeneratorView : UserControl
 
     private async void AiGenerateButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!TryReadPositiveNumber(ChoiceCountTextBox.Text, "选择题数量", out int choiceCount) ||
-            !TryReadPositiveNumber(EssayCountTextBox.Text, "大题数量", out int essayCount))
+        if (!TryReadPositiveNumber(ChoiceCountTextBox.Text, "\u9009\u62e9\u9898\u6570\u91cf", out int choiceCount) ||
+            !TryReadPositiveNumber(EssayCountTextBox.Text, "\u5927\u9898\u6570\u91cf", out int essayCount))
         {
             return;
         }
@@ -126,13 +131,13 @@ public partial class AssignmentGeneratorView : UserControl
         int totalCount = choiceCount + essayCount;
         if (totalCount == 0)
         {
-            MessageBox.Show("请至少设置一道要生成的题目。", "AI 生成新题", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show("\u8bf7\u81f3\u5c11\u8bbe\u7f6e\u4e00\u9053\u8981\u751f\u6210\u7684\u9898\u76ee\u3002", "AI \u751f\u6210\u65b0\u9898", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
         if (totalCount > 10)
         {
-            MessageBox.Show("AI 生成新题一次最多生成 10 道，请减少选择题或大题数量。", "AI 生成新题", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show("AI \u751f\u6210\u65b0\u9898\u4e00\u6b21\u6700\u591a\u751f\u6210 10 \u9053\uff0c\u8bf7\u51cf\u5c11\u9009\u62e9\u9898\u6216\u5927\u9898\u6570\u91cf\u3002", "AI \u751f\u6210\u65b0\u9898", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
@@ -143,7 +148,7 @@ public partial class AssignmentGeneratorView : UserControl
 
         if (_questionBank.Count == 0)
         {
-            MessageBox.Show("云端题库还没有可参考的题目。请先在“题库管理”中导入并保存题库。", "AI 生成新题", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show("\u4e91\u7aef\u9898\u5e93\u8fd8\u6ca1\u6709\u53ef\u53c2\u8003\u7684\u9898\u76ee\u3002\u8bf7\u5148\u5728\u201c\u9898\u5e93\u7ba1\u7406\u201d\u4e2d\u5bfc\u5165\u5e76\u4fdd\u5b58\u9898\u5e93\u3002", "AI \u751f\u6210\u65b0\u9898", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
@@ -154,7 +159,7 @@ public partial class AssignmentGeneratorView : UserControl
         IReadOnlyList<QuestionGenerationReference> references = BuildGenerationReferences(selectedTopics, selectedDirections, selectedScenarios, difficulty);
 
         AiGenerateButton.IsEnabled = false;
-        StatusText.Text = "正在基于云端题库生成 AI 新题...";
+        StatusText.Text = "\u6b63\u5728\u57fa\u4e8e\u4e91\u7aef\u9898\u5e93\u751f\u6210 AI \u65b0\u9898\u8349\u7a3f...";
 
         try
         {
@@ -165,33 +170,30 @@ public partial class AssignmentGeneratorView : UserControl
 
             QuestionGenerationRequest request = new(difficulty, selectedTopics, selectedDirections, selectedScenarios, choiceCount, essayCount, references);
             IReadOnlyList<GeneratedQuestionDraft> drafts = await generationService.GenerateAsync(request);
-            int nextNumber = _questions.Count + 1;
+            string sourcePrompt = BuildDraftSourcePrompt(selectedTopics, selectedDirections, selectedScenarios, difficulty, choiceCount, essayCount, references.Count, settings.UseMockAnalysis);
+
             foreach (GeneratedQuestionDraft draft in drafts)
             {
-                _questions.Add(ToGeneratedQuestion(draft, nextNumber++));
+                await _questionDraftStore.SaveAsync(ToQuestionDraft(draft, sourcePrompt, references.Count));
             }
 
-            _assignmentTitle = "高中生物遗传与进化专题作业";
-            _assignmentMeta = $"主题：{string.Join("、", selectedTopics)}；方向：{string.Join("、", selectedDirections)}；情景：{string.Join("、", selectedScenarios)}；难度：{difficulty}；共 {_questions.Count} 题，含 AI 基于云端题库生成的新题。";
-            PreviewTitleText.Text = _assignmentTitle;
-            PreviewMetaText.Text = _assignmentMeta;
+            await LoadQuestionDraftsAsync(showError: true);
             StatusText.Text = settings.UseMockAnalysis
-                ? $"已用模拟 AI 生成 {drafts.Count} 道新题，并加入作业预览。请在系统设置中配置真实 AI 后生成正式草稿。"
-                : $"已基于 {references.Count} 道云端参考题生成 {drafts.Count} 道新题，并加入作业预览。";
+                ? $"\u5df2\u7528\u6a21\u62df AI \u751f\u6210 {drafts.Count} \u9053\u65b0\u9898\uff0c\u5df2\u8fdb\u5165\u201cAI \u8349\u7a3f\u6c60\u201d\u5f85\u5ba1\u6838\u3002"
+                : $"\u5df2\u57fa\u4e8e {references.Count} \u9053\u4e91\u7aef\u53c2\u8003\u9898\u751f\u6210 {drafts.Count} \u9053\u65b0\u9898\uff0c\u5df2\u8fdb\u5165\u201cAI \u8349\u7a3f\u6c60\u201d\u5f85\u5ba1\u6838\u3002";
             ReplacePanel.Visibility = Visibility.Collapsed;
             _replaceIndex = -1;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or HttpRequestException or TaskCanceledException or InvalidOperationException or JsonException)
         {
-            MessageBox.Show(ex.Message, "AI 生成新题失败", MessageBoxButton.OK, MessageBoxImage.Warning);
-            StatusText.Text = "AI 生成新题失败。";
+            MessageBox.Show(ex.Message, "AI \u751f\u6210\u65b0\u9898\u5931\u8d25", MessageBoxButton.OK, MessageBoxImage.Warning);
+            StatusText.Text = "AI \u751f\u6210\u65b0\u9898\u5931\u8d25\u3002";
         }
         finally
         {
             AiGenerateButton.IsEnabled = true;
         }
     }
-
     private IReadOnlyList<QuestionGenerationReference> BuildGenerationReferences(IReadOnlyList<string> topics, IReadOnlyList<string> directions, IReadOnlyList<string> scenarios, string difficulty)
     {
         List<QuestionBankItem> candidates = _questionBank
@@ -239,6 +241,181 @@ public partial class AssignmentGeneratorView : UserControl
             options,
             draft.Answer);
     }
+
+    private static QuestionDraft ToQuestionDraft(GeneratedQuestionDraft draft, string sourcePrompt, int referenceCount)
+    {
+        List<string> options = draft.Options.Take(4).ToList();
+        while (options.Count < 4)
+        {
+            options.Add(string.Empty);
+        }
+
+        return new QuestionDraft
+        {
+            Status = "\u5f85\u5ba1\u6838",
+            Type = draft.Type,
+            Topic = draft.Topic,
+            Direction = draft.Direction,
+            Scenario = draft.Scenario,
+            Difficulty = draft.Difficulty,
+            Stem = draft.Stem,
+            OptionA = options[0],
+            OptionB = options[1],
+            OptionC = options[2],
+            OptionD = options[3],
+            Answer = draft.Answer,
+            SourcePrompt = sourcePrompt,
+            ReferenceCount = referenceCount
+        };
+    }
+
+    private static GeneratedQuestion ToGeneratedQuestion(QuestionDraft draft, int number)
+    {
+        return new GeneratedQuestion(
+            number,
+            draft.Type,
+            draft.Difficulty,
+            draft.Topic,
+            draft.Direction,
+            draft.Scenario,
+            draft.Stem,
+            draft.ToOptions(),
+            draft.Answer);
+    }
+
+    private static string BuildDraftSourcePrompt(IReadOnlyList<string> topics, IReadOnlyList<string> directions, IReadOnlyList<string> scenarios, string difficulty, int choiceCount, int essayCount, int referenceCount, bool usedMock)
+    {
+        StringBuilder builder = new();
+        builder.AppendLine($"Difficulty: {difficulty}");
+        builder.AppendLine($"Topics: {string.Join(", ", topics)}");
+        builder.AppendLine($"Directions: {string.Join(", ", directions)}");
+        builder.AppendLine($"Scenarios: {string.Join(", ", scenarios)}");
+        builder.AppendLine($"Choice count: {choiceCount}");
+        builder.AppendLine($"Essay count: {essayCount}");
+        builder.AppendLine($"Reference count: {referenceCount}");
+        builder.AppendLine($"Generator: {(usedMock ? "mock" : "ai")}");
+        return builder.ToString().Trim();
+    }
+
+    private async Task LoadQuestionDraftsAsync(bool showError)
+    {
+        try
+        {
+            ObservableCollection<QuestionDraft> rows = await _questionDraftStore.LoadAsync();
+            _questionDrafts.Clear();
+            foreach (QuestionDraft row in rows)
+            {
+                _questionDrafts.Add(row);
+            }
+
+            DraftStatusText.Text = _questionDrafts.Count == 0
+                ? "\u6682\u65e0 AI \u9898\u76ee\u8349\u7a3f\u3002"
+                : $"\u5df2\u8bfb\u53d6 {_questionDrafts.Count} \u9053 AI \u9898\u76ee\u8349\u7a3f\u3002";
+            DraftsDataGrid.SelectedIndex = _questionDrafts.Count > 0 ? 0 : -1;
+            if (_questionDrafts.Count == 0)
+            {
+                ShowQuestionDraft(null);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or HttpRequestException or TaskCanceledException or JsonException)
+        {
+            DraftStatusText.Text = "AI \u8349\u7a3f\u6c60\u8bfb\u53d6\u5931\u8d25\u3002";
+            if (showError)
+            {
+                MessageBox.Show(ex.Message, "\u8bfb\u53d6 AI \u8349\u7a3f\u6c60\u5931\u8d25", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+    }
+
+    private async void RefreshDraftsButton_Click(object sender, RoutedEventArgs e)
+    {
+        await LoadQuestionDraftsAsync(showError: true);
+    }
+
+    private void DraftsDataGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        ShowQuestionDraft(DraftsDataGrid.SelectedItem as QuestionDraft);
+    }
+
+    private async void ConfirmDraftButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (DraftsDataGrid.SelectedItem is not QuestionDraft draft)
+        {
+            MessageBox.Show("\u8bf7\u5148\u9009\u62e9\u4e00\u9053\u9898\u76ee\u8349\u7a3f\u3002", "AI \u8349\u7a3f\u6c60", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        try
+        {
+            int nextNumber = _questions.Count + 1;
+            _questions.Add(ToGeneratedQuestion(draft, nextNumber));
+            await _questionDraftStore.UpdateStatusAsync(draft.Id, "\u5df2\u786e\u8ba4");
+            await LoadQuestionDraftsAsync(showError: false);
+            PreviewTitleText.Text = _assignmentTitle;
+            _assignmentMeta = $"\u5171 {_questions.Count} \u9898\uff0c\u5305\u542b\u5df2\u5ba1\u6838\u7684 AI \u9898\u76ee\u8349\u7a3f\u3002";
+            PreviewMetaText.Text = _assignmentMeta;
+            StatusText.Text = $"\u5df2\u786e\u8ba4\u8349\u7a3f\u5e76\u52a0\u5165\u4f5c\u4e1a\u9884\u89c8\uff1a\u7b2c {nextNumber} \u9898\u3002";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or HttpRequestException or TaskCanceledException or JsonException)
+        {
+            MessageBox.Show(ex.Message, "\u786e\u8ba4\u9898\u76ee\u8349\u7a3f\u5931\u8d25", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private async void DiscardDraftButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (DraftsDataGrid.SelectedItem is not QuestionDraft draft)
+        {
+            MessageBox.Show("\u8bf7\u5148\u9009\u62e9\u4e00\u9053\u9898\u76ee\u8349\u7a3f\u3002", "AI \u8349\u7a3f\u6c60", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        try
+        {
+            await _questionDraftStore.UpdateStatusAsync(draft.Id, "\u5df2\u5e9f\u5f03");
+            await LoadQuestionDraftsAsync(showError: false);
+            StatusText.Text = "\u5df2\u5c06\u9898\u76ee\u8349\u7a3f\u6807\u8bb0\u4e3a\u5df2\u5e9f\u5f03\u3002";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or HttpRequestException or TaskCanceledException or JsonException)
+        {
+            MessageBox.Show(ex.Message, "\u5e9f\u5f03\u9898\u76ee\u8349\u7a3f\u5931\u8d25", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private async void DeleteDraftButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (DraftsDataGrid.SelectedItem is not QuestionDraft draft)
+        {
+            MessageBox.Show("\u8bf7\u5148\u9009\u62e9\u4e00\u9053\u9898\u76ee\u8349\u7a3f\u3002", "AI \u8349\u7a3f\u6c60", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        MessageBoxResult result = MessageBox.Show("\u786e\u5b9a\u8981\u5220\u9664\u8fd9\u9053\u9898\u76ee\u8349\u7a3f\u5417\uff1f", "\u5220\u9664\u9898\u76ee\u8349\u7a3f", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        if (result != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        try
+        {
+            await _questionDraftStore.DeleteAsync(draft.Id);
+            await LoadQuestionDraftsAsync(showError: false);
+            StatusText.Text = "\u9898\u76ee\u8349\u7a3f\u5df2\u5220\u9664\u3002";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or HttpRequestException or TaskCanceledException)
+        {
+            MessageBox.Show(ex.Message, "\u5220\u9664\u9898\u76ee\u8349\u7a3f\u5931\u8d25", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void ShowQuestionDraft(QuestionDraft? draft)
+    {
+        DraftStemTextBox.Text = draft?.Stem ?? string.Empty;
+        DraftOptionsTextBox.Text = draft?.OptionsText ?? string.Empty;
+        DraftAnswerTextBox.Text = draft?.Answer ?? string.Empty;
+        DraftSourceTextBox.Text = draft?.SourcePrompt ?? string.Empty;
+    }
+
     private static bool TryReadPositiveNumber(string text, string label, out int value)
     {
         if (int.TryParse(text.Trim(), out value) && value >= 0 && value <= 50)

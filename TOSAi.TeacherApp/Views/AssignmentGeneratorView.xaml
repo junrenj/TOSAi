@@ -193,5 +193,97 @@
                 </Grid>
             </DockPanel>
         </TabItem>
+
+        <TabItem Header="AI &#x8349;&#x7A3F;&#x6C60;">
+            <Grid Margin="0,12,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="380" />
+                    <ColumnDefinition Width="18" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0" Style="{StaticResource Card}">
+                    <DockPanel LastChildFill="True">
+                        <StackPanel DockPanel.Dock="Top">
+                            <TextBlock Text="AI &#x9898;&#x76EE;&#x8349;&#x7A3F;" Style="{StaticResource SectionTitle}" />
+                            <TextBlock x:Name="DraftStatusText"
+                                       Text="AI &#x751F;&#x6210;&#x7684;&#x65B0;&#x9898;&#x4F1A;&#x5148;&#x8FDB;&#x5165;&#x5F85;&#x5BA1;&#x6838;&#x8349;&#x7A3F;&#x6C60;&#x3002;"
+                                       Style="{StaticResource MutedText}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,0,0,14" />
+                            <Button Content="&#x5237;&#x65B0;"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Click="RefreshDraftsButton_Click"
+                                    Margin="0,0,0,12" />
+                        </StackPanel>
+
+                        <DataGrid x:Name="DraftsDataGrid"
+                                  SelectionChanged="DraftsDataGrid_SelectionChanged"
+                                  IsReadOnly="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="&#x72B6;&#x6001;" Binding="{Binding Status}" Width="78" />
+                                <DataGridTextColumn Header="&#x65F6;&#x95F4;" Binding="{Binding CreatedAtText}" Width="120" />
+                                <DataGridTextColumn Header="&#x9898;&#x578B;" Binding="{Binding Type}" Width="70" />
+                                <DataGridTextColumn Header="&#x9898;&#x5E72;" Binding="{Binding ShortStem}" Width="*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </DockPanel>
+                </Border>
+
+                <Border Grid.Column="2" Style="{StaticResource Card}">
+                    <DockPanel LastChildFill="True">
+                        <StackPanel DockPanel.Dock="Top">
+                            <TextBlock Text="&#x8349;&#x7A3F;&#x8BE6;&#x60C5;" Style="{StaticResource SectionTitle}" />
+                            <WrapPanel Margin="0,0,0,14">
+                                <Button Content="&#x786E;&#x8BA4;&#x52A0;&#x5165;&#x9884;&#x89C8;"
+                                        Style="{StaticResource PrimaryButton}"
+                                        Click="ConfirmDraftButton_Click"
+                                        Margin="0,0,10,0" />
+                                <Button Content="&#x5E9F;&#x5F03;"
+                                        Style="{StaticResource SecondaryButton}"
+                                        Click="DiscardDraftButton_Click"
+                                        Margin="0,0,10,0" />
+                                <Button Content="&#x5220;&#x9664;"
+                                        Style="{StaticResource SecondaryButton}"
+                                        Click="DeleteDraftButton_Click" />
+                            </WrapPanel>
+                        </StackPanel>
+
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <TextBlock Text="&#x9898;&#x5E72;" FontWeight="SemiBold" />
+                                <TextBox x:Name="DraftStemTextBox"
+                                         Margin="0,8,0,16"
+                                         MinHeight="96"
+                                         IsReadOnly="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto" />
+                                <TextBlock Text="&#x9009;&#x9879;" FontWeight="SemiBold" />
+                                <TextBox x:Name="DraftOptionsTextBox"
+                                         Margin="0,8,0,16"
+                                         MinHeight="90"
+                                         IsReadOnly="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto" />
+                                <TextBlock Text="&#x7B54;&#x6848;&#x4E0E;&#x89E3;&#x6790;" FontWeight="SemiBold" />
+                                <TextBox x:Name="DraftAnswerTextBox"
+                                         Margin="0,8,0,16"
+                                         MinHeight="120"
+                                         IsReadOnly="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto" />
+                                <TextBlock Text="&#x751F;&#x6210;&#x6761;&#x4EF6;" FontWeight="SemiBold" />
+                                <TextBox x:Name="DraftSourceTextBox"
+                                         Margin="0,8,0,0"
+                                         MinHeight="90"
+                                         IsReadOnly="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </DockPanel>
+                </Border>
+            </Grid>
+        </TabItem>
     </TabControl>
 </UserControl>
